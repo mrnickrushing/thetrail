@@ -89,7 +89,7 @@ static class Program
         for (int i = 0; i < 40 && hunt.Animals.Count == 0; i++) Run(0.5f);
         foreach (var a in hunt.Animals) { app.Tap((int)(a.X + a.W / 2 + a.Vx * 0.05f), (int)(a.Y - a.H / 2)); break; }
         Run(0.4f); Shot("hunt_hit");
-        Run(HuntScene.Length); Shot("hunt_result"); Dismiss();
+        app.Tap(260, 7); Run(0.1f); Shot("hunt_result"); Dismiss();
         Shot("menu_after_hunt");
         // A fort: talk and store.
         g.next = "kearny"; g.visited.Add("bigblue"); g.legMiles = 119; g.legDone = 118; g.miles = 303; g.Phase = Phase.Traveling;

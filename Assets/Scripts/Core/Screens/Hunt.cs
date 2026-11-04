@@ -29,8 +29,13 @@ namespace TheTrail.Core
         float time, spawn = 0.6f, aimX = HunterX, aimY = 100;
         int meat, fired;
         bool over;
+        /// <summary>Ends the hunt early with whatever you've shot.</summary>
+        static readonly Btn Leave = new Btn(234, 1, 60, 13, "LEAVE");
 
         public int Meat => meat;
+        public bool Over => over;
+        /// <summary>For tests: as if this much had been shot.</summary>
+        public void AddMeat(int lbs) => meat += lbs;
         public IReadOnlyList<Animal> Animals => animals;
 
         static int Lbs(string k) => k == "buffalo" ? 350 : k == "elk" ? 220 : k == "bear" ? 160 : k == "deer" ? 90 : k == "antelope" ? 50 : k == "rabbit" ? 3 : 1;
@@ -210,6 +215,7 @@ namespace TheTrail.Core
             c.Text(130, 4, "Meat " + meat + " lb", Canvas.Hot);
             int left = Math.Max(0, (int)Math.Ceiling(Length - time));
             c.TextRight(Canvas.W - 6, 4, "Time 0:" + left.ToString("00"), left <= 5 && Blink ? Canvas.Hot : Canvas.Bright);
+            Leave.Draw(c, false, !over);
             if (T < 2.5f) c.TextOutlined((Canvas.W - Canvas.TextWidth(App.Touch ? "TAP TO SHOOT" : "CLICK TO SHOOT")) / 2, 120, App.Touch ? "TAP TO SHOOT" : "CLICK TO SHOOT", Canvas.Hot);
         }
 
@@ -251,7 +257,13 @@ namespace TheTrail.Core
             c.Line(x + 5, y - 20, (int)mx + 1, (int)my, Canvas.Bright);
         }
 
-        public override void Tap(int x, int y) => Fire(x, y);
-        public override void Key(char k) { if (k == Keys.Escape) time = Length; }
+        public override void Tap(int x, int y)
+        {
+            // Generous target for a finger: the whole top bar around the button.
+            if (y < Top + 6 && x >= Leave.X - 12 && x < Leave.X + Leave.W + 12) { if (!over) { S.Click(); Finish(); } return; }
+            Fire(x, y);
+        }
+
+        public override void Key(char k) { if (k == Keys.Escape && !over) Finish(); }
     }
 }

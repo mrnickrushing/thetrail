@@ -260,6 +260,23 @@ namespace TheTrail.Tests
             Assert.AreEqual("Saved", again.Records.top[0].name);
         }
 
+        [Test]
+        public void LeavingTheHuntEarlyKeepsTheMeatUpTo400Pounds()
+        {
+            var app = new App(new MemoryPlatform());
+            app.Game = Outfitted(); app.Game.food = 100; app.Game.Phase = Phase.Arrived;
+            var hunt = new HuntScene();
+            app.Go(hunt);
+            app.Tick(1);
+            hunt.AddMeat(650);
+            app.Tap(264, 7);                     // the LEAVE button
+            Assert.IsTrue(hunt.Over, "LEAVE ends the hunt before the time runs out");
+            Assert.AreEqual(100 + 400 - 15, app.Game.food, "100 lb in the wagon + 400 lb carried back - a day of eating for five");
+            Assert.IsInstanceOf<MessageScene>(app.Top);
+            for (int i = 0; i < 10 && !(app.Top is TrailMenuScene); i++) app.Key(' ');
+            Assert.IsInstanceOf<TrailMenuScene>(app.Top);
+        }
+
         /// <summary>Random taps and keys for a long time on many seeds: the game must never throw or get stuck without a screen.</summary>
         [Test]
         public void MonkeyCannotBreakTheGame()
