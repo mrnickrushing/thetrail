@@ -1,0 +1,14 @@
+{
+    "name": "TheTrail.Game",
+    "rootNamespace": "TheTrail.Game",
+    "references": ["TheTrail.Core"],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

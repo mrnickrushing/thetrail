@@ -1,0 +1,14 @@
+{
+    "name": "TheTrail.Editor",
+    "rootNamespace": "TheTrail.EditorTools",
+    "references": ["TheTrail.Core", "TheTrail.Game"],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
