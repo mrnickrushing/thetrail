@@ -7,13 +7,15 @@ namespace TheTrail.Core
     public sealed class HuntScene : Scene
     {
         public const float Length = 30f;
-        const int Scale = 2, HunterX = 192, HunterY = 226, Top = 16;
+        /// <summary>Most meat you can haul back to the wagon from one hunt.</summary>
+        public const int CarryLimit = 400;
+        const int HunterX = 192, HunterY = 226, Top = 16;
 
         public sealed class Animal
         {
             public string Kind; public float X, Y, Vx, Vy; public bool Dead, Fleeing; public int Lbs; public float Age;
-            public int W => Canvas.ArtWidth(Art.Animals[Kind][0]) * Scale;
-            public int H => Art.Animals[Kind][0].Length * Scale;
+            public int W => Core.Animals.Size(Kind).w;
+            public int H => Core.Animals.Size(Kind).h;
             public bool Contains(float px, float py) => px >= X && px < X + W && py >= Y - H && py < Y;
         }
 
@@ -157,9 +159,7 @@ namespace TheTrail.Core
         {
             if (over) return;
             over = true;
-            int healthy = 0; foreach (var m in G.party) if (m.alive && m.ailment == Ailment.None) healthy++;
-            int carry = 100 * Math.Max(1, Math.Min(2, healthy));
-            int got = Math.Min(meat, carry);
+            int got = Math.Min(meat, CarryLimit);
             got = Math.Min(got, Math.Max(0, 2000 - G.food));
             G.food += got;
             G.huntPressure += 1f;
@@ -168,7 +168,8 @@ namespace TheTrail.Core
             else
             {
                 string t = "You shot " + meat + " pounds of meat.";
-                if (meat > got) t += " " + (carry > 100 ? "Between the two of you, you" : "You") + " could only carry " + got + " pounds back to the wagon.";
+                if (meat > got) t += " You could only carry " + got + " pounds back to the wagon.";
+                else t += " You carry it all back to the wagon.";
                 texts.Add(t);
             }
             var log = Sim.Day(G, false);
@@ -227,11 +228,11 @@ namespace TheTrail.Core
 
         void DrawAnimal(Canvas c, Animal a)
         {
-            var frames = Art.Animals[a.Kind];
             bool right = a.Vx > 0;
-            int frame = a.Dead ? 0 : (int)(a.Age * (a.Fleeing ? 10 : 6)) % 2;
-            c.ArtScaled((int)a.X, (int)a.Y - a.H, frames[frame], Scale, right, a.Dead, a.Dead ? -1 : 1);
-            if (a.Dead) c.TextOutlined((int)a.X + a.W / 2 - 12, (int)a.Y - a.H - 10, a.Lbs + "", Canvas.Bright);
+            float phase = a.Dead ? 0.6f : a.Age * (a.Fleeing ? 15f : 9f);
+            var sp = Core.Animals.Draw(a.Kind, phase, a.Fleeing && !a.Dead);
+            sp.Blit(c, (int)a.X, (int)a.Y - a.H, right, a.Dead, a.Dead ? -0.9f : 0);
+            if (a.Dead) c.TextOutlined((int)a.X + a.W / 2 - Canvas.TextWidth(a.Lbs.ToString()) / 2, (int)a.Y - a.H - 10, a.Lbs.ToString(), Canvas.Bright);
         }
 
         void DrawHunter(Canvas c)

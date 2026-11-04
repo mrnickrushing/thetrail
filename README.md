@@ -18,7 +18,7 @@ public-domain `font8x8` set.
 | **Each day** | Weather by month and altitude, food by ration size, wear from the pace, illness (cholera, typhoid, dysentery, measles, fever, exhaustion), injuries, and about 20 kinds of trouble and luck |
 | **Stops** | Size up the situation: check supplies, the map, pace and rations, rest, trade with other travelers, talk to people (three lines at every landmark), buy supplies at forts (prices climb westward), hunt |
 | **Rivers** | Width and depth that rise with spring runoff and rain; ford, caulk and float, take the ferry, or wait |
-| **Hunting** | Tap to shoot buffalo, elk, deer, antelope, bear, rabbits and squirrels; trees and rocks stop bullets; you carry back 100 lb per able hunter (two at most) |
+| **Hunting** | Tap to shoot buffalo, elk, deer, antelope, bear, rabbits and squirrels; trees and rocks stop bullets; you can carry up to 400 lb back to the wagon |
 | **The Columbia** | A rafting run between rocks; touch and hold to steer |
 | **Endings** | Points for survivors, health and what's left in the wagon, multiplied by your way of life, and a Top Ten list. If the whole party dies, you write the leader's epitaph, and later journeys pass that grave at the same mile |
 | **Options** | Green, amber or white phosphor; CRT glow on or off; fast travel; sound |

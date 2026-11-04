@@ -109,7 +109,7 @@ static class Program
             // Careful players rest when health slips; everyone hunts when food runs low.
             if (g.food < 25 * g.Alive && g.bullets >= 10)
             {
-                int meat = Math.Min(100 * Math.Min(2, g.Alive), g.rng.Range(40, 260));
+                int meat = Math.Min(400, g.rng.Range(40, 420));
                 g.bullets -= g.rng.Range(8, 20); g.bullets = Math.Max(0, g.bullets);
                 g.food += meat; Sim.Day(g, false);
                 continue;

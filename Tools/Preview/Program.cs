@@ -127,5 +127,19 @@ static class Program
         K(' '); foreach (var ch in "gone west") K(ch); Shot("epitaph");
         g.visited.Add("oregoncity"); g.Phase = Phase.Won;
         app.Go(new WinScene()); Shot("win", 0.5f); K(' '); Shot("score"); K(' '); Shot("topten");
+        // Every hunt animal in four steps of its gait, plus a few lying where they fell.
+        var c = app.C; c.NoClip(); c.Clear();
+        c.Gradient(0, 0, Canvas.W, Canvas.H, 0.55f, 1.25f);
+        int y = 4;
+        foreach (var kind in Animals.Kinds)
+        {
+            var (w, h) = Animals.Size(kind);
+            if (y + h > Canvas.H) break;
+            for (int f = 0; f < 4; f++) Animals.Draw(kind, f * 1.57f, f == 3).Blit(c, 4 + f * (w + 6), y, f % 2 == 1, false);
+            y += h + 3;
+        }
+        Animals.Draw("buffalo", 0.6f, false).Blit(c, 250, 4, false, true, -0.9f);
+        Animals.Draw("deer", 0.6f, false).Blit(c, 250, 40, true, true, -0.9f);
+        Png.Save(c, Path.Combine(dir, $"{n++:00}_animals.png"), 3);
     }
 }
