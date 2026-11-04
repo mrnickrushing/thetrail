@@ -11,7 +11,7 @@
 # and, if this repository is private, GITHUB_TOKEN (read access) to download the release asset.
 # The archive is built unsigned; the export step signs it with a cloud-managed distribution
 # certificate and an App Store profile created on the fly. The app record (bundle id
-# com.rushingtech.thetrail) must exist in App Store Connect.
+# com.rushingtech.theogtrail) must exist in App Store Connect.
 
 workflows:
   ios-testflight:
@@ -22,7 +22,7 @@ workflows:
       groups:
         - ios_credentials
       vars:
-        BUNDLE_ID: com.rushingtech.thetrail
+        BUNDLE_ID: com.rushingtech.theogtrail
         APPLE_TEAM_ID: PH4AKDQ4Q7
         XCODE_PROJECT: ios/Unity-iPhone.xcodeproj
         XCODE_SCHEME: Unity-iPhone

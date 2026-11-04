@@ -13,7 +13,7 @@ PlayerSettings:
   useOnDemandResources: 0
   accelerometerFrequency: 60
   companyName: Rushing Technologies
-  productName: The Trail
+  productName: The OG Trail
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
@@ -165,8 +165,8 @@ PlayerSettings:
   androidMaxAspectRatio: 2.4
   androidMinAspectRatio: 1
   applicationIdentifier:
-    Standalone: com.rushingtech.thetrail
-    iPhone: com.rushingtech.thetrail
+    Standalone: com.rushingtech.theogtrail
+    iPhone: com.rushingtech.theogtrail
   buildNumber:
     Standalone: 0
     VisionOS: 0

@@ -54,6 +54,8 @@ Tools/unity-capture.sh out.png 4 'var app = TheTrail.Game.Runner.Instance.App; /
 
 ## iPhone builds
 
-`Tools/ios-export.sh` exports the Xcode project from the running Editor and uploads it as the
-`ios-latest` GitHub release asset; Codemagic's `ios-testflight` workflow (codemagic.yaml) signs it and
-uploads to TestFlight. Only send a TestFlight build when the user asks.
+App Store Connect app "The OG Trail", bundle id `com.rushingtech.theogtrail`. `Tools/ios-export.sh`
+exports the Xcode project from the running Editor and uploads it as the `ios-latest` release asset;
+then Codemagic's `thetrail-testflight` workflow (train app, branch `codemagic/thetrail` of
+mrnickrushing/train, which has the App Store Connect key) signs it and uploads to TestFlight. See
+README. Only send a TestFlight build when the user asks.

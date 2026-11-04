@@ -33,7 +33,7 @@ public-domain `font8x8` set.
   `Assets/Resources/Crt.shader` (sharp pixels at any size, scanlines, glow, curvature), turns touch,
   mouse and keys into game input, and plays the beeper. The scene is empty; `Boot` builds everything.
 - `Assets/Editor/ProjectSetup.cs`: player settings (landscape, iOS 15+, bundle id
-  `com.rushingtech.thetrail`), the app icon (drawn from the game's own pixels), the iOS build.
+  `com.rushingtech.theogtrail`), the app icon (drawn from the game's own pixels), the iOS build.
 
 ## Developing
 
@@ -48,10 +48,16 @@ dotnet run --project Tools/TrailSim -c Release -- 2000      # balance bot: survi
 With the local Pipeline package (see `CLAUDE.md`) the running Editor can be driven from the
 terminal: `Tools/unity-recompile.sh`, `Tools/unity-capture.sh out.png`.
 
-## Building for iPhone
+## Building for iPhone (TestFlight)
 
-1. Create the app in App Store Connect with bundle id `com.rushingtech.thetrail`.
-2. Add this repository as an app in Codemagic with the `ios_credentials` variable group (an App
-   Store Connect API key with the Admin role; plus `GITHUB_TOKEN` while the repo is private).
-3. `Tools/ios-export.sh` exports the Xcode project from the running Editor and uploads it as the
-   `ios-latest` release asset; then start the `ios-testflight` workflow.
+App Store Connect app **The OG Trail** (id 6830442340, bundle id `com.rushingtech.theogtrail`).
+
+1. `Tools/ios-export.sh` exports the Xcode project from the running Editor and uploads it as the
+   public `ios-latest` release asset of this repo.
+2. In Codemagic, start the **`thetrail-testflight`** workflow of the **train** app on the
+   `codemagic/thetrail` branch of `mrnickrushing/train`. It runs there because that app's
+   `ios_credentials` group holds the team's App Store Connect API key, which works for every app on
+   the team. It downloads this repo's export, archives, signs and uploads to TestFlight.
+
+`codemagic.yaml` here is the same workflow, ready for the `thetrail` Codemagic app
+(id 6aea9cab1c40377fbbf334bb) once an `ios_credentials` group with the API key is added to it.

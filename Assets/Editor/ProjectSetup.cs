@@ -19,8 +19,8 @@ namespace TheTrail.EditorTools
     public static class ProjectSetup
     {
         public const string ScenePath = "Assets/Scenes/Main.unity";
-        public const string BundleId = "com.rushingtech.thetrail";
-        public const string ProductName = "The Trail";
+        public const string BundleId = "com.rushingtech.theogtrail";
+        public const string ProductName = "The OG Trail";
         /// <summary>CFBundleShortVersionString; must match the App Store Connect version.</summary>
         public const string AppVersion = "1.0";
         const string DoneKey = "TheTrail.ProjectSetup.v1";
