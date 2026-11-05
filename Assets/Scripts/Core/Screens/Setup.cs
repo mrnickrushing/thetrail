@@ -15,7 +15,7 @@ namespace TheTrail.Core
             menu.Add("Be a carpenter from Ohio", () => Pick(Job.Carpenter));
             menu.Add("Be a farmer from Illinois", () => Pick(Job.Farmer));
             menu.Add("Find out the differences", () => App.Say(
-                "A banker starts with $1,600, a carpenter with $800 and a farmer with $400.\n\n" +
+                "A banker starts with $1,600, a carpenter with $1,300 and a farmer with $1,000.\n\n" +
                 "A carpenter is handy at mending a broken wagon. A farmer knows oxen and loses fewer of them.\n\n" +
                 "At the end of the trail, a carpenter's points are doubled and a farmer's are tripled."));
         }
@@ -151,9 +151,9 @@ namespace TheTrail.Core
                 case 1: return Math.Max(0, 2000 - G.food);
                 case 2: return Math.Max(0, 50 - G.clothing);
                 case 3: return Math.Max(0, 50 - G.bullets / 20);
-                case 4: return Math.Max(0, 3 - G.wheels);
-                case 5: return Math.Max(0, 3 - G.axles);
-                default: return Math.Max(0, 3 - G.tongues);
+                case 4: return Math.Max(0, Sim.MaxSpares - G.wheels);
+                case 5: return Math.Max(0, Sim.MaxSpares - G.axles);
+                default: return Math.Max(0, Sim.MaxSpares - G.tongues);
             }
         }
 
@@ -173,7 +173,7 @@ namespace TheTrail.Core
             string q = i == 0 ? "How many yoke of oxen? (2 oxen to a yoke)" : i == 1 ? "How many pounds of food?" : i == 2 ? "How many sets of clothing?" :
                 i == 3 ? "How many boxes of 20 bullets?" : "How many " + Names[i].ToLower() + "?";
             int max = MaxFor(i);
-            if (max == 0) { App.Say(i >= 4 ? "Your wagon can only carry three of each spare part." : "Your wagon can't hold any more of that."); return; }
+            if (max == 0) { App.Say(i >= 4 ? "Your wagon can only carry " + Sim.MaxSpares + " of each spare part." : "Your wagon can't hold any more of that."); return; }
             App.Push(new NumberScene(q, max, n => cart[i] = n, cart[i]));
         }
 

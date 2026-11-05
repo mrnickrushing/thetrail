@@ -40,7 +40,7 @@ public-domain `font8x8` set.
 Unity 6 (6000.0.85f1). Open the folder, press Play (the setup step runs once on first open).
 
 ```bash
-dotnet test Tools/CoreTests                                 # 16 tests, no Unity needed
+dotnet test Tools/CoreTests                                 # 18 tests, no Unity needed
 dotnet run --project Tools/Preview -- /tmp/screens          # every screen as PNG, no Unity needed
 dotnet run --project Tools/TrailSim -c Release -- 2000      # balance bot: survival by strategy
 ```
