@@ -176,6 +176,7 @@ namespace TheTrail.Core
     public sealed class NumberScene : Scene
     {
         readonly string title; readonly int max; readonly Action<int> done; string value = "";
+        float tooMuch = -9;   // when a digit was refused for going over the max
         bool fresh;   // a pre-filled amount is replaced by the first digit typed
         readonly List<Btn> keys = new List<Btn>();
         const int BW = 64, BH = 26, X0 = 92, Y0 = 92;
@@ -200,7 +201,8 @@ namespace TheTrail.Core
             c.Text(236 - Canvas.TextWidth(v), 70, v, fresh ? Canvas.Black : Canvas.Hot);
             if (Blink) c.Fill(238, 70, 3, 8, Canvas.Hot);
             foreach (var b in keys) b.Draw(c);
-            c.TextCenter(212, "max " + max, Canvas.Dark);
+            bool warn = App.Time - tooMuch < 1.2f;
+            c.TextCenter(212, warn ? "THE MOST YOU CAN HAVE IS " + max : "max " + max, warn ? Canvas.Hot : Canvas.Dark);
         }
 
         public override void Tap(int x, int y)
@@ -231,8 +233,8 @@ namespace TheTrail.Core
             else if (value.Length < 5)
             {
                 string nv = value == "0" ? l : value + l;
-                long n = long.Parse(nv);
-                value = n > max ? max.ToString() : nv;
+                if (long.Parse(nv) > max) { App.Synth.Bad(); tooMuch = App.Time; }
+                else value = nv;
             }
         }
 
