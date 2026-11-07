@@ -19,7 +19,9 @@ namespace TheTrail.Core
     {
         // ---- Setup ------------------------------------------------------------------------------
 
-        public static int StartingCash(Job j) => j == Job.Banker ? 1600 : j == Job.Carpenter ? 800 : 400;
+        public static int StartingCash(Job j) => j == Job.Banker ? 1600 : j == Job.Carpenter ? 1300 : 1000;
+        /// <summary>Most spares of each wagon part (wheel, axle, tongue) the wagon can carry.</summary>
+        public const int MaxSpares = 10;
         public static int Multiplier(Job j) => j == Job.Banker ? 1 : j == Job.Carpenter ? 2 : 3;
         public static string JobName(Job j) => j == Job.Banker ? "banker" : j == Job.Carpenter ? "carpenter" : "farmer";
 

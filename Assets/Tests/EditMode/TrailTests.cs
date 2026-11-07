@@ -77,9 +77,9 @@ namespace TheTrail.Tests
         public void NewGameStartsAtIndependenceWithTheRightPurse()
         {
             Assert.AreEqual(160000, Sim.NewGame(Job.Banker, new[] { "A" }, 4, 1).cents);
-            Assert.AreEqual(80000, Sim.NewGame(Job.Carpenter, new[] { "A" }, 4, 1).cents);
+            Assert.AreEqual(130000, Sim.NewGame(Job.Carpenter, new[] { "A" }, 4, 1).cents);
             var g = Sim.NewGame(Job.Farmer, new[] { "A", "B", "C", "D", "E" }, 5, 1);
-            Assert.AreEqual(40000, g.cents);
+            Assert.AreEqual(100000, g.cents, "everyone starts with at least $1,000");
             Assert.AreEqual(5, g.Alive);
             Assert.AreEqual(Trail.Start, g.Here);
             Assert.AreEqual("kansas", g.next);
@@ -275,6 +275,26 @@ namespace TheTrail.Tests
             Assert.IsInstanceOf<MessageScene>(app.Top);
             for (int i = 0; i < 10 && !(app.Top is TrailMenuScene); i++) app.Key(' ');
             Assert.IsInstanceOf<TrailMenuScene>(app.Top);
+        }
+
+        [Test]
+        public void StoreSellsMoreThanThreeSparePartsAndTheNumberPadKeepsWhatYouType()
+        {
+            var app = new App(new MemoryPlatform());
+            app.Game = Sim.NewGame(Job.Farmer, new[] { "A", "B", "C", "D", "E" }, 4, 1);
+            app.Go(new StoreScene(false));
+            app.Key('5');                                   // wagon wheels
+            Assert.IsInstanceOf<NumberScene>(app.Top);
+            app.Key('5'); app.Key(Keys.Enter);              // 5 is allowed
+            app.Key('5');
+            app.Key('2'); app.Key('5'); app.Key(Keys.Enter); // 25 is over the max: the 5 is refused, so 2 is bought
+            app.Key('8');                                   // leave the store
+            Assert.AreEqual(2, app.Game.wheels, "the last amount typed for wheels was 2 (25 was refused, not turned into the max)");
+            var g = new App(new MemoryPlatform());
+            g.Game = Sim.NewGame(Job.Farmer, new[] { "A" }, 4, 1);
+            g.Go(new StoreScene(false));
+            g.Key('5'); g.Key('9'); g.Key(Keys.Enter); g.Key('8');
+            Assert.AreEqual(9, g.Game.wheels, "nine spare wheels fit (the old limit was three)");
         }
 
         /// <summary>Random taps and keys for a long time on many seeds: the game must never throw or get stuck without a screen.</summary>

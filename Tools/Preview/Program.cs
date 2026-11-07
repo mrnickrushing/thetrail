@@ -61,6 +61,7 @@ static class Program
         K('3'); K('1'); K('0'); K('\n');
         K('4'); K('5'); K('\n');
         K('5'); K('1'); K('\n'); K('6'); K('1'); K('\n'); K('7'); K('1'); K('\n');
+        K('5'); K('5'); K('2'); K('5'); Shot("numpad_too_many", 0.1f); K('\n');
         Shot("store_filled");
         K('8'); Shot("independence", 1);
         K(' '); Shot("travel_day0", 0.2f);
