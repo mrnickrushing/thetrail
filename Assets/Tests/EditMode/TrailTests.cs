@@ -19,46 +19,11 @@ namespace TheTrail.Tests
         public string ToJson(object o) => System.Text.Json.JsonSerializer.Serialize(o, o.GetType(), Opt);
         public T FromJson<T>(string json) => System.Text.Json.JsonSerializer.Deserialize<T>(json, Opt);
 #endif
-        public bool Touch => true;
+        public bool Touch { get; set; } = true;
     }
 
     public class TrailTests
     {
-        static GameState Outfitted(Job job = Job.Banker, uint seed = 1, int month = 4)
-        {
-            var g = Sim.NewGame(job, new[] { "Ann", "Ben", "Cal", "Dot", "Eve" }, month, seed);
-            g.oxen = 8; g.food = 1200; g.clothing = 10; g.bullets = 200; g.wheels = g.axles = g.tongues = 1;
-            g.Phase = Phase.Traveling;
-            return g;
-        }
-
-        /// <summary>Plays the rules to the end with sensible choices: rest when worn, ford shallow, ferry or float deep.</summary>
-        static GameState PlayOut(GameState g)
-        {
-            for (int guard = 0; guard < 800 && g.Alive > 0 && g.Phase != Phase.Won; guard++)
-            {
-                switch (g.Phase)
-                {
-                    case Phase.River:
-                        var l = Trail.Get(g.Here);
-                        Sim.Cross(g, g.riverDepthTenths < 25 ? Sim.Crossing.Ford : l.Ferry > 0 ? Sim.Crossing.Ferry : Sim.Crossing.Float);
-                        continue;
-                    case Phase.Branch:
-                        Sim.ChooseRoute(g, Trail.Get(g.Here).Next[g.Here == "dalles" ? 1 : 0]);
-                        continue;
-                    case Phase.Arrived:
-                        g.Phase = Phase.Traveling;
-                        continue;
-                }
-                if (g.food < 60) g.food += 300;  // stands in for hunting
-                if (g.broken != Part.None) { g.AddSpare(g.broken, 1); g.AddSpare(g.broken, -1); g.broken = Part.None; }
-                if (g.oxen < 2) g.oxen = 4;
-                Sim.Day(g, true);
-                if (g.Alive > 0 && Sim.AtNext(g)) Sim.Arrive(g);
-            }
-            return g;
-        }
-
         [Test]
         public void RngIsDeterministicAndInRange()
         {
@@ -74,255 +39,308 @@ namespace TheTrail.Tests
         }
 
         [Test]
-        public void NewGameStartsAtIndependenceWithTheRightPurse()
+        public void HashIsStable()
         {
-            Assert.AreEqual(160000, Sim.NewGame(Job.Banker, new[] { "A" }, 4, 1).cents);
-            Assert.AreEqual(130000, Sim.NewGame(Job.Carpenter, new[] { "A" }, 4, 1).cents);
-            var g = Sim.NewGame(Job.Farmer, new[] { "A", "B", "C", "D", "E" }, 5, 1);
-            Assert.AreEqual(100000, g.cents, "everyone starts with at least $1,000");
-            Assert.AreEqual(5, g.Alive);
-            Assert.AreEqual(Trail.Start, g.Here);
-            Assert.AreEqual("kansas", g.next);
-            Assert.AreEqual(Phase.Store, g.Phase);
-            Assert.AreEqual(new DateTime(1848, 5, 1), g.Date);
+            Assert.AreEqual(2166136261u, Sim.Hash(""));
+            Assert.AreEqual(Sim.Hash("stjoe"), Sim.Hash("stjoe"));
+            Assert.AreNotEqual(Sim.Hash("stjoe"), Sim.Hash("kearny"));
         }
 
         [Test]
-        public void EachDayEatsFoodByRations()
+        public void EveryRoadLeadsToTheDiggings()
         {
-            var g = Outfitted();
-            int before = g.food;
-            Sim.Day(g, false);
-            Assert.That(before - g.food, Is.LessThanOrEqualTo(15));   // 5 people x 3 lb
-            g.rations = Rations.BareBones;
-            before = g.food;
-            Sim.Day(g, false);
-            Assert.That(before - g.food, Is.LessThanOrEqualTo(g.Alive));
-        }
-
-        [Test]
-        public void TheTrailIsConnectedAndEndsInOregonCity()
-        {
-            foreach (var l in Trail.All.Values)
+            Assert.IsTrue(Route.Exists(Route.Start));
+            foreach (var s in Route.All.Values)
             {
-                foreach (var r in l.Next) Assert.IsTrue(Trail.All.ContainsKey(r.To), l.Id + " -> " + r.To);
-                if (l.Kind != Kind.End) Assert.IsNotEmpty(l.Next, l.Id);
-                Assert.IsNotEmpty(l.Blurb, l.Id);
-                Assert.That(Canvas.Wrap(l.Blurb, 42).Count, Is.LessThanOrEqualTo(4), "blurb too long for the landmark screen: " + l.Id);
-                foreach (var t in l.Talk) Assert.That(Canvas.Wrap("\"" + t.say + "\"", 40).Count, Is.LessThanOrEqualTo(8), l.Id);
+                foreach (var l in s.Next) Assert.IsTrue(Route.Exists(l.To), s.Id + " -> " + l.To);
+                if (!s.End) Assert.Greater(s.Next.Length, 0, s.Id + " is a dead end");
+                if (s.Kind == StopKind.River) Assert.Greater(s.Width, 0, s.Id);
+                Assert.IsFalse(string.IsNullOrEmpty(s.Blurb), s.Id);
             }
-            Assert.AreEqual(Kind.End, Trail.Get(Trail.Finish).Kind);
-        }
-
-        [Test]
-        public void AFullJourneyReachesOregonOnEveryRoute()
-        {
-            int won = 0;
-            for (uint seed = 1; seed <= 40; seed++)
+            // Walk every branch: all of them end at a diggings, with no loops.
+            var paths = new List<string>();
+            void Walk(string id, string path, int depth)
             {
-                var g = PlayOut(Outfitted(Job.Banker, seed));
-                if (g.Phase == Phase.Won)
-                {
-                    won++;
-                    Assert.AreEqual(Trail.Finish, g.Here);
-                    Assert.That(g.miles, Is.InRange(1850, 2000));
-                    Assert.That(g.day, Is.InRange(100, 320));
-                    Assert.That(Sim.Score(g), Is.GreaterThan(0));
-                }
+                Assert.Less(depth, 40, "loop at " + path);
+                var s = Route.Get(id);
+                if (s.End) { paths.Add(path + id); return; }
+                foreach (var l in s.Next) Walk(l.To, path + id + ">", depth + 1);
             }
-            Assert.That(won, Is.GreaterThanOrEqualTo(30), "a careful party should usually make it");
-        }
-
-        [Test]
-        public void RiversAreDeepInSpringAndShallowInLateSummer()
-        {
-            var l = Trail.Get("kansas");
-            var spring = Outfitted(month: 4); var fall = Outfitted(month: 8);
-            spring.wetness = fall.wetness = 0;
-            Assert.That(Sim.RiverDepth(spring, l), Is.GreaterThan(Sim.RiverDepth(fall, l)));
-            for (uint s = 0; s < 50; s++)
+            Walk(Route.Start, "", 0);
+            Assert.GreaterOrEqual(paths.Count, 4);
+            foreach (var p in paths)
             {
-                var g = Outfitted(seed: s);
-                int d = Sim.RiverDepth(g, l);
-                Assert.That(d, Is.InRange(10, 120));
-                g.riverDepthTenths = d;
-                Assert.That(Sim.RiverWidth(g, l), Is.InRange(400, 900));
+                int miles = 0; var ids = p.Split('>');
+                for (int i = 0; i + 1 < ids.Length; i++) foreach (var l in Route.Get(ids[i]).Next) if (l.To == ids[i + 1]) miles += l.Miles;
+                Assert.That(miles, Is.InRange(1700, 2300), p);
             }
         }
 
         [Test]
-        public void FerryIsSaferThanFordingDeepWater()
+        public void TheHiringBoardHasVariety()
         {
-            int fordLosses = 0, ferryLosses = 0;
-            for (uint s = 0; s < 300; s++)
+            for (uint s = 1; s < 30; s++)
             {
-                var a = Outfitted(seed: s); a.visited.Add("kansas"); a.riverDepthTenths = 50;
-                var r = Sim.Cross(a, Sim.Crossing.Ford); if (r.Capsized || r.Swamped) fordLosses++;
-                var b = Outfitted(seed: s); b.visited.Add("kansas"); b.riverDepthTenths = 50;
-                r = Sim.Cross(b, Sim.Crossing.Ferry); if (r.Capsized || r.Swamped) ferryLosses++;
-                Assert.AreEqual(b.cents, 160000 - 500);
-            }
-            Assert.That(fordLosses, Is.GreaterThan(200));
-            Assert.That(ferryLosses, Is.LessThan(30));
-        }
-
-        [Test]
-        public void PricesRiseFartherWest()
-        {
-            var g = Outfitted();
-            int home = Sim.Price(g, Sim.Good.Food);
-            g.visited.Add("hall");
-            Assert.That(Sim.Price(g, Sim.Good.Food), Is.GreaterThan(home));
-            Assert.AreEqual(4000, Sim.Price(Outfitted(), Sim.Good.Oxen));
-        }
-
-        [Test]
-        public void HealthLabelsFollowHardship()
-        {
-            Assert.AreEqual("good", Sim.HealthLabel(0));
-            Assert.AreEqual("fair", Sim.HealthLabel(45));
-            Assert.AreEqual("poor", Sim.HealthLabel(80));
-            Assert.AreEqual("very poor", Sim.HealthLabel(150));
-            var easy = Outfitted(); var hard = Outfitted();
-            hard.pace = Pace.Grueling; hard.rations = Rations.BareBones;
-            for (int i = 0; i < 30; i++) { Sim.Day(easy, true); Sim.Day(hard, true); }
-            Assert.That(hard.hardship, Is.GreaterThan(easy.hardship + 30));
-        }
-
-        [Test]
-        public void FarmersScoreTriple()
-        {
-            var a = Outfitted(Job.Banker); var b = Outfitted(Job.Farmer);
-            b.cents = a.cents;
-            Assert.AreEqual(Sim.Score(a) * 3, Sim.Score(b));
-        }
-
-        [Test]
-        public void TradesNeverAskForMoreThanYouHave()
-        {
-            for (uint s = 0; s < 300; s++)
-            {
-                var g = Outfitted(seed: s);
-                var o = Sim.MakeOffer(g);
-                if (o == null) continue;
-                Assert.That(Sim.Have(g, o.want), Is.GreaterThanOrEqualTo(o.wantN));
-                Assert.AreNotEqual(o.want, o.give);
-                Sim.Accept(g, o);
-                Assert.That(g.oxen, Is.GreaterThanOrEqualTo(2));
+                var b = Content.Board(new Rng(s), "Tester");
+                Assert.AreEqual(8, b.Count);
+                var trades = new HashSet<Trade>(); var names = new HashSet<string>();
+                foreach (var h in b) { trades.Add(h.trade); names.Add(h.name); Assert.Greater(h.stake, 0); }
+                Assert.GreaterOrEqual(trades.Count, 5);
+                Assert.AreEqual(8, names.Count);
             }
         }
 
         [Test]
-        public void TopTenStaysSortedAndShort()
+        public void OutfittingPoolsTheStakes()
         {
-            var r = Records.Default();
-            r.AddScore("Zed", 9999); r.AddScore("Low", 10);
-            Assert.AreEqual(10, r.top.Count);
-            Assert.AreEqual("Zed", r.top[0].name);
-            for (int i = 1; i < r.top.Count; i++) Assert.That(r.top[i - 1].score, Is.GreaterThanOrEqualTo(r.top[i].score));
-            Assert.IsFalse(r.MakesTopTen(5));
+            var g = Sim.NewGame("Tester", 121, 1);
+            Assert.AreEqual(Phase.Hire, g.Phase);
+            var b = Content.Board(new Rng(1), "Tester");
+            g.company.Add(b[0]); g.company.Add(b[1]);
+            Sim.BeginOutfit(g, TeamKind.Oxen);
+            Assert.AreEqual((Sim.LeaderStake + b[0].stake + b[1].stake) * 100, g.cents);
+            Assert.AreEqual(Phase.Outfit, g.Phase);
+            Assert.IsNotNull(Sim.CannotLeave(g));
+            g.animals = 6; g.food = 600;
+            Assert.IsNull(Sim.CannotLeave(g));
         }
 
         [Test]
-        public void WrapNeverOverflows()
+        public void LoadLimitsWhatTheTeamPulls()
         {
-            var lines = Canvas.Wrap("A fairly long sentence with words, plus averyveryverylongwordthatmustbreak, and more.", 12);
-            foreach (var l in lines) Assert.That(l.Length, Is.LessThanOrEqualTo(12));
+            var g = Sim.NewGame("Tester", 121, 1);
+            Sim.BeginOutfit(g, TeamKind.Mules);
+            g.animals = 4;
+            int cap = Sim.Capacity(g);
+            g.animals = 8;
+            Assert.Greater(Sim.Capacity(g), cap);
+            int load = Sim.Load(g);
+            g.food += 100;
+            Assert.AreEqual(load + 100, Sim.Load(g));
         }
 
         [Test]
-        public void SavedJourneyLoadsBack()
+        public void JourneysFinishAndMostCompaniesArrive()
+        {
+            int reached = 0, n = 40;
+            var dollars = new List<int>();
+            for (uint s = 1; s <= n; s++)
+            {
+                var r = Bot.Play(s, 1, 0.75f);
+                Assert.IsTrue(r.Reached || r.Lost, "seed " + s + " never finished (" + r.Game.Phase + " at " + r.Game.Here + ")");
+                if (r.Reached) { reached++; dollars.Add(r.Dollars); }
+            }
+            Assert.GreaterOrEqual(reached, n * 6 / 10, "too many companies lost");
+            dollars.Sort();
+            Assert.Greater(dollars[dollars.Count / 2], 1500, "the median take is too poor");
+        }
+
+        [Test]
+        public void LeavingLateIsHarder()
+        {
+            int early = 0, late = 0;
+            for (uint s = 1; s <= 30; s++)
+            {
+                if (Bot.Play(s, 0, 0.7f).Reached) early++;
+                if (Bot.Play(s, 3, 0.7f).Reached) late++;
+            }
+            Assert.GreaterOrEqual(early, late);
+        }
+
+        [Test]
+        public void SameSeedSameJourney()
+        {
+            var a = Bot.Play(9, 1); var b = Bot.Play(9, 1);
+            Assert.AreEqual(a.Days, b.Days);
+            Assert.AreEqual(a.Dollars, b.Dollars);
+            CollectionAssert.AreEqual(a.Game.journal, b.Game.journal);
+        }
+
+        [Test]
+        public void ClaimsGetPoorerLate()
+        {
+            var g = Sim.NewGame("Tester", 200, 3);
+            float early = Sim.Lateness(g);
+            g.day = 90;
+            Assert.Less(Sim.Lateness(g), early);
+        }
+
+        [Test]
+        public void SaveRoundTripsMidJourney()
         {
             var p = new MemoryPlatform();
             var app = new App(p);
-            app.Game = Outfitted(seed: 9);
-            for (int i = 0; i < 20; i++) Sim.Day(app.Game, true);
-            app.SaveGame();
-            var g = new App(p).LoadGame();
-            Assert.IsNotNull(g);
-            Assert.AreEqual(app.Game.day, g.day);
-            Assert.AreEqual(app.Game.miles, g.miles);
-            Assert.AreEqual(app.Game.food, g.food);
-            Assert.AreEqual(app.Game.party[2].name, g.party[2].name);
-            Assert.AreEqual(app.Game.next, g.next);
-            Assert.AreEqual(app.Game.rng.Next(), g.rng.Next(), "the random stream continues where it left off");
+            var g = Sim.NewGame("Tester", 121, 5);
+            g.company.AddRange(Content.Board(new Rng(5), "Tester").GetRange(0, 3));
+            Sim.BeginOutfit(g, TeamKind.Oxen);
+            g.animals = 6; g.food = 900; g.kegs = 2;
+            Sim.Depart(g);
+            for (int i = 0; i < 15; i++) { var d = Sim.Day(g, true); if (d.Arrived) { Sim.Arrive(g); Sim.Depart(g); } }
+            app.Game = g; app.SaveGame();
+            var back = app.LoadGame();
+            Assert.IsNotNull(back);
+            Assert.AreEqual(g.miles, back.miles);
+            Assert.AreEqual(g.food, back.food);
+            Assert.AreEqual(g.company.Count, back.company.Count);
+            Assert.AreEqual(g.Here, back.Here);
+            Assert.AreEqual(g.Phase, back.Phase);
+            Assert.AreEqual(g.rng.Next(), back.rng.Next());
         }
 
         [Test]
-        public void SettingsAndRecordsPersist()
+        public void ABadSaveIsIgnored()
+        {
+            var p = new MemoryPlatform();
+            p.Data[App.SaveKey] = "{not json";
+            var app = new App(p);
+            Assert.IsNull(app.LoadGame());
+            p.Data[App.SaveKey] = "{\"version\":1}";
+            Assert.IsNull(app.LoadGame());
+        }
+
+        static GameState Ready(uint s, TeamKind team = TeamKind.Oxen)
+        {
+            var g = Sim.NewGame("Tester", 121, s);
+            g.company.AddRange(Content.Board(new Rng(s), "Tester").GetRange(0, 4));
+            Sim.BeginOutfit(g, team);
+            g.animals = 6; g.food = 800; g.powder = 40; g.kits = 1; g.medicine = 4; g.kegs = 2; g.water = 20;
+            return g;
+        }
+
+        [Test]
+        public void EveryEventOffersAChoice()
+        {
+            for (uint s = 1; s <= 10; s++)
+            {
+                var g = Ready(s, s % 2 == 0 ? TeamKind.Mules : TeamKind.Oxen);
+                foreach (var e in Events.All)
+                {
+                    if (!e.When(g)) continue;
+                    Assert.IsFalse(string.IsNullOrEmpty(e.Text(g)), e.Id);
+                    var ch = e.Choices(g);
+                    Assert.Greater(ch.Count, 0, e.Id);
+                    Assert.IsTrue(ch.Exists(c => c.Enabled), e.Id + " has no answer that can be chosen");
+                }
+            }
+        }
+
+        [Test]
+        public void EventsLeaveTheStateSane()
+        {
+            for (uint s = 1; s <= 6; s++)
+                foreach (var e in Events.All)
+                {
+                    var g = Ready(s);
+                    if (!e.When(g)) continue;
+                    foreach (var c in e.Choices(g))
+                    {
+                        if (!c.Enabled || c.Hunt != null) continue;
+                        var copy = Clone(g);
+                        string said = c.Do(copy);
+                        Assert.IsNotNull(said, e.Id + ": " + c.Label);
+                        Assert.GreaterOrEqual(copy.animals, 0, e.Id);
+                        Assert.GreaterOrEqual(copy.cents, 0, e.Id + ": " + c.Label + " spent money it did not have");
+                    }
+                }
+        }
+
+        static GameState Clone(GameState g)
+        {
+            var p = new MemoryPlatform();
+            return p.FromJson<GameState>(p.ToJson(g));
+        }
+
+        [Test]
+        public void ThePayoutAddsUp()
+        {
+            var g = Sim.NewGame("Tester", 121, 1);
+            g.company.AddRange(Content.Board(new Rng(1), "Tester").GetRange(0, 2));
+            g.gold = 10; g.cents = 5000;
+            Assert.AreEqual(10 * Sim.DollarsPerOunce + 50 + 3 * Sim.SurvivorBonus, Sim.TakeDollars(g));
+        }
+
+        [Test]
+        public void TheLedgerKeepsTheBestTen()
+        {
+            var l = Ledger.Default();
+            Assert.AreEqual(10, l.top.Count);
+            int low = l.top[l.top.Count - 1].dollars;
+            Assert.IsFalse(l.Makes(low - 1));
+            int at = l.Add("Best", 999999, "");
+            Assert.AreEqual(0, at);
+            Assert.AreEqual(10, l.top.Count);
+        }
+
+        /// <summary>Taps and keys at random from several starting points: nothing may throw or get stuck.</summary>
+        [Test]
+        public void MonkeyPlaysWithoutCrashing()
+        {
+            var seen = new HashSet<string>();
+            for (uint seed = 1; seed <= 8; seed++)
+            {
+                var p = new MemoryPlatform { Touch = seed % 2 == 0 };
+                var app = new App(p);
+                var g = Ready(seed, seed % 3 == 0 ? TeamKind.Mules : TeamKind.Oxen);
+                g.Phase = Phase.Road; Sim.Depart(g);
+                switch (seed % 4)
+                {
+                    case 1: app.Game = g; app.Go(new RoadScene()); break;
+                    case 2: g.visited.Add("bigblue"); g.Phase = Phase.Crossing; app.Game = g; app.Go(new StopScene(true)); break;
+                    case 3: g.visited.Add("hangtown"); g.Phase = Phase.Diggings; app.Game = g; app.Go(new DiggingsScene(true)); break;
+                }
+                var r = new Rng(seed * 101u);
+                char[] keys = { Keys.Enter, Keys.Space, Keys.Space, Keys.Escape, Keys.Up, Keys.Down, Keys.Left, Keys.Right, '1', '2', '3', 'f', 'w', '+', '-', 'a' };
+                var here = new HashSet<string>();
+                for (int frame = 0; frame < 12000; frame++)
+                {
+                    app.HeldSpace = r.Chance(0.3f);
+                    app.PointerDown = r.Chance(0.2f);
+                    app.PointerX = r.Range(0, Canvas.W); app.PointerY = r.Range(0, Canvas.H);
+                    app.Tick(1 / 20f);
+                    if (frame % 10 == 0) app.Draw();
+                    if (r.Chance(0.12f)) app.Tap(r.Range(0, Canvas.W), r.Range(0, Canvas.H));
+                    if (r.Chance(0.06f)) app.Key(keys[r.Range(0, keys.Length)]);
+                    if (app.Top != null) { seen.Add(app.Top.GetType().Name); here.Add(app.Top.GetType().Name); }
+                }
+                Assert.GreaterOrEqual(here.Count, 4, "seed " + seed + ": " + string.Join(",", here));
+            }
+            Assert.GreaterOrEqual(seen.Count, 14, string.Join(",", seen));
+        }
+
+        /// <summary>Every screen draws for a game at each phase and stop.</summary>
+        [Test]
+        public void EveryScreenDraws()
         {
             var p = new MemoryPlatform();
             var app = new App(p);
-            app.Settings.monitor = 1; app.SaveSettings();
-            app.Records.AddScore("Saved", 99999); app.SaveRecords();
-            var again = new App(p);
-            Assert.AreEqual(1, again.Settings.monitor);
-            Assert.AreEqual("Saved", again.Records.top[0].name);
-        }
-
-        [Test]
-        public void LeavingTheHuntEarlyKeepsTheMeatUpTo400Pounds()
-        {
-            var app = new App(new MemoryPlatform());
-            app.Game = Outfitted(); app.Game.food = 100; app.Game.Phase = Phase.Arrived;
-            var hunt = new HuntScene();
-            app.Go(hunt);
-            app.Tick(1);
-            hunt.AddMeat(650);
-            app.Tap(264, 7);                     // the LEAVE button
-            Assert.IsTrue(hunt.Over, "LEAVE ends the hunt before the time runs out");
-            Assert.AreEqual(100 + 400 - 15, app.Game.food, "100 lb in the wagon + 400 lb carried back - a day of eating for five");
-            Assert.IsInstanceOf<MessageScene>(app.Top);
-            for (int i = 0; i < 10 && !(app.Top is TrailMenuScene); i++) app.Key(' ');
-            Assert.IsInstanceOf<TrailMenuScene>(app.Top);
-        }
-
-        [Test]
-        public void StoreSellsMoreThanThreeSparePartsAndTheNumberPadKeepsWhatYouType()
-        {
-            var app = new App(new MemoryPlatform());
-            app.Game = Sim.NewGame(Job.Farmer, new[] { "A", "B", "C", "D", "E" }, 4, 1);
-            app.Go(new StoreScene(false));
-            app.Key('5');                                   // wagon wheels
-            Assert.IsInstanceOf<NumberScene>(app.Top);
-            app.Key('5'); app.Key(Keys.Enter);              // 5 is allowed
-            app.Key('5');
-            app.Key('2'); app.Key('5'); app.Key(Keys.Enter); // 25 is over the max: the 5 is refused, so 2 is bought
-            app.Key('8');                                   // leave the store
-            Assert.AreEqual(2, app.Game.wheels, "the last amount typed for wheels was 2 (25 was refused, not turned into the max)");
-            var g = new App(new MemoryPlatform());
-            g.Game = Sim.NewGame(Job.Farmer, new[] { "A" }, 4, 1);
-            g.Go(new StoreScene(false));
-            g.Key('5'); g.Key('9'); g.Key(Keys.Enter); g.Key('8');
-            Assert.AreEqual(9, g.Game.wheels, "nine spare wheels fit (the old limit was three)");
-        }
-
-        /// <summary>Random taps and keys for a long time on many seeds: the game must never throw or get stuck without a screen.</summary>
-        [Test]
-        public void MonkeyCannotBreakTheGame()
-        {
-            char[] keys = { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', ' ', Keys.Enter, Keys.Escape, Keys.Back, 'a', 'q', Keys.Up, Keys.Down };
-            var screens = new HashSet<string>();
-            for (uint seed = 1; seed <= 6; seed++)
+            var g = Ready(2);
+            app.Game = g;
+            var scenes = new List<Func<Scene>>
             {
-                var r = new Rng(seed);
-                var app = new App(new MemoryPlatform());
-                for (int step = 0; step < 12000; step++)
-                {
-                    int k = r.Range(0, 10);
-                    if (k < 5) app.Tap(r.Range(0, Canvas.W), r.Range(0, Canvas.H));
-                    else if (k < 8) app.Key(keys[r.Range(0, keys.Length)]);
-                    app.PointerDown = r.Chance(0.3f); app.PointerX = r.Range(0, Canvas.W);
-                    app.Tick(r.Range(0.01f, 0.25f));
-                    if (step % 3 == 0) app.Draw();
-                    Assert.IsNotNull(app.Top, "no screen after step " + step);
-                    screens.Add(app.Top.GetType().Name);
-                    // Keep the journey moving: on a game, sometimes jump ahead toward the next stop.
-                    if (app.Game != null && app.Game.Phase == Phase.Traveling && r.Chance(0.002f)) app.Game.legDone = Math.Max(app.Game.legDone, app.Game.legMiles - 2);
-                }
+                () => new TitleScene(), () => new HireScene(), () => new StoreScene(true), () => new RoadScene(), () => new StopScene(true),
+                () => new CampMenuAtStop(), () => new OrdersScene(), () => new StatusScene(0), () => new StatusScene(1), () => new MapScene(),
+                () => new JournalScene(), () => new StalkScene("buffalo", null), () => new StalkScene(null, null), () => new HaulScene(),
+                () => new PanScene(q => { }), () => new LedgerScene(2), () => new SettingsScene(), () => new CreditsScene(), () => new HelpScene(),
+            };
+            foreach (var make in scenes)
+            {
+                app.Game = Clone(g);
+                app.Go(make());
+                for (int i = 0; i < 30; i++) { app.Tick(0.05f); app.Draw(); }
             }
-            foreach (var s in new[] { "TitleScene", "JobScene", "StoreScene", "TravelScene", "TrailMenuScene" })
-                Assert.IsTrue(screens.Contains(s), "monkey never reached " + s);
+            foreach (var id in Route.Order)
+            {
+                var gg = Clone(g);
+                gg.visited.Add(id);
+                var s = Route.Get(id);
+                if (s.Kind == StopKind.River) { gg.Phase = Phase.Crossing; app.Game = gg; app.Go(new CrossingScene()); app.Draw(); app.Go(new FordScene(Sim.Fords(gg)[0])); }
+                else if (s.End) { gg.Phase = Phase.Diggings; app.Game = gg; app.Go(new DiggingsScene(true)); }
+                else { app.Game = gg; app.Go(new StopScene(true)); }
+                for (int i = 0; i < 20; i++) { app.Tick(0.05f); app.Draw(); }
+                Art.Scene(app.C, s.Art, 0, 0, Canvas.W, 150, 1f, 1, 0, Sky.Fair);
+            }
+            var end = Clone(g); end.gold = 30; app.Game = end; app.Go(new PayoutScene()); app.Draw();
+            var lost = Clone(g); app.Game = lost; app.Go(new LostScene()); app.Draw();
         }
     }
 }

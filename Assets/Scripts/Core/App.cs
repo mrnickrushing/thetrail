@@ -24,40 +24,42 @@ namespace TheTrail.Core
     public class Settings
     {
         public bool sound = true;
-        public int monitor;          // 0 green, 1 amber, 2 white
-        public bool crt = true;
+        public bool music = true;
         public bool fast;            // quicker travel
     }
 
-    [Serializable] public class ScoreEntry { public string name; public int score; public string rating; }
-    [Serializable] public class Tomb { public int miles; public string name; public string epitaph; public string date; }
+    [Serializable] public class LedgerEntry { public string name; public int dollars; public string rank; public string note; }
 
+    /// <summary>The Assay Ledger: the best ten companies.</summary>
     [Serializable]
-    public class Records
+    public class Ledger
     {
-        public List<ScoreEntry> top = new List<ScoreEntry>();
-        public List<Tomb> tombs = new List<Tomb>();
+        public List<LedgerEntry> top = new List<LedgerEntry>();
 
-        public static Records Default()
+        public static Ledger Default()
         {
-            var r = new Records();
-            (string, int)[] d =
+            var l = new Ledger();
+            (string, int, string)[] d =
             {
-                ("Abigail Thorne", 7420), ("Jedediah Cole", 6310), ("Martha Quill", 5280), ("Silas Brennan", 4460),
-                ("Hester Lowell", 3750), ("Ezekiel Marsh", 3120), ("Cora Whitlow", 2690), ("Amos Kettering", 2150),
-                ("Lydia Vance", 1620), ("Otis Pruett", 1080),
+                ("Hollister & Co.", 14200, "River bar, Hangtown"), ("The Vermont Boys", 11350, "Dry gulch, Hangtown"),
+                ("Mabry's Company", 8900, "River bar, Hangtown"), ("Pike County Mess", 7120, "Hillside, Hangtown"),
+                ("The Kellogg Party", 5600, "River bar, Lassen's"), ("Quimby & Sons", 4300, "Dry gulch, Hangtown"),
+                ("Ohio Mutual", 3150, "Hillside, Hangtown"), ("The Stoddard Mess", 2400, "River bar, Lassen's"),
+                ("Fenwick's Company", 1700, "Hillside, Lassen's"), ("The Truax Party", 900, "Dry gulch, Lassen's"),
             };
-            foreach (var (n, s) in d) r.top.Add(new ScoreEntry { name = n, score = s, rating = Sim.Rating(s) });
-            return r;
+            foreach (var (n, s, note) in d) l.top.Add(new LedgerEntry { name = n, dollars = s, rank = Sim.Rank(s), note = note });
+            return l;
         }
 
-        public bool MakesTopTen(int score) => top.Count < 10 || score > top[top.Count - 1].score;
+        public bool Makes(int dollars) => top.Count < 10 || dollars > top[top.Count - 1].dollars;
 
-        public void AddScore(string name, int score)
+        public int Add(string name, int dollars, string note)
         {
-            top.Add(new ScoreEntry { name = name, score = score, rating = Sim.Rating(score) });
-            top.Sort((a, b) => b.score.CompareTo(a.score));
+            var e = new LedgerEntry { name = name, dollars = dollars, rank = Sim.Rank(dollars), note = note };
+            top.Add(e);
+            top.Sort((a, b) => b.dollars.CompareTo(a.dollars));
             if (top.Count > 10) top.RemoveRange(10, top.Count - 10);
+            return top.IndexOf(e);
         }
     }
 
@@ -74,8 +76,8 @@ namespace TheTrail.Core
         public abstract void Draw(Canvas c);
         public virtual void Tap(int x, int y) { }
         public virtual void Key(char k) { }
-        protected bool Blink => (App.Time * 2.2f) % 2f < 1.35f;
-        protected string Continue => App.Touch ? "TAP TO CONTINUE" : "PRESS SPACE TO CONTINUE";
+        protected bool Blink => (App.Time * 2f) % 2f < 1.4f;
+        protected string Continue => App.Touch ? "Tap to continue" : "Press space to continue";
     }
 
     public sealed class App
@@ -84,27 +86,28 @@ namespace TheTrail.Core
         public readonly Synth Synth = new Synth();
         public readonly IPlatform P;
         public Settings Settings = new Settings();
-        public Records Records = Records.Default();
+        public Ledger Ledger = Ledger.Default();
         public GameState Game;
         public float Time;
-        /// <summary>Held input, set by the host every frame (for steering the raft).</summary>
-        public bool PointerDown, HeldLeft, HeldRight;
+        /// <summary>Held input, set by the host every frame (for the minigames).</summary>
+        public bool PointerDown, HeldLeft, HeldRight, HeldUp, HeldDown, HeldSpace;
         public int PointerX, PointerY;
         readonly List<Scene> stack = new List<Scene>();
         public bool Touch => P.Touch;
         public Scene Top => stack.Count > 0 ? stack[stack.Count - 1] : null;
         public int Depth => stack.Count;
+        public bool Held => PointerDown || HeldSpace || HeldUp;
 
-        public const string SaveKey = "thetrail.journey", RecordsKey = "thetrail.records", SettingsKey = "thetrail.settings";
+        public const string SaveKey = "argonauts.journey", LedgerKey = "argonauts.ledger", SettingsKey = "argonauts.settings";
 
         public App(IPlatform p, Func<App, Scene> first = null)
         {
             P = p;
             try { var s = p.Load(SettingsKey); if (!string.IsNullOrEmpty(s)) Settings = p.FromJson<Settings>(s) ?? new Settings(); } catch { Settings = new Settings(); }
-            try { var r = p.Load(RecordsKey); if (!string.IsNullOrEmpty(r)) Records = p.FromJson<Records>(r) ?? Records.Default(); } catch { Records = Records.Default(); }
-            if (Records.top == null || Records.top.Count == 0) Records.top = Records.Default().top;
-            if (Records.tombs == null) Records.tombs = new List<Tomb>();
+            try { var r = p.Load(LedgerKey); if (!string.IsNullOrEmpty(r)) Ledger = p.FromJson<Ledger>(r) ?? Ledger.Default(); } catch { Ledger = Ledger.Default(); }
+            if (Ledger.top == null || Ledger.top.Count == 0) Ledger = Ledger.Default();
             Synth.Muted = !Settings.sound;
+            Synth.MusicOn = Settings.music;
             Go(first != null ? first(this) : new TitleScene());
         }
 
@@ -135,13 +138,16 @@ namespace TheTrail.Core
 
         // ---- Helpers for common dialogs ---------------------------------------------------------
 
-        public void Say(string text, Action then = null, bool overlay = true) => Push(new MessageScene(text, then, overlay));
-        public void SayAll(IList<string> texts, Action then)
+        public void Say(string text, Action then = null, Tone tone = Tone.Info, string title = null) => Push(new MessageScene(text, then, tone, title));
+
+        public void SayAll(IList<Notice> notes, Action then)
         {
-            if (texts.Count == 0) { then?.Invoke(); return; }
-            var rest = new List<string>(texts); var first = rest[0]; rest.RemoveAt(0);
-            Say(first, () => SayAll(rest, then));
+            if (notes.Count == 0) { then?.Invoke(); return; }
+            var rest = new List<Notice>(notes); var first = rest[0]; rest.RemoveAt(0);
+            Say(first.Text, () => SayAll(rest, then), first.Tone);
         }
+
+        public void Ask(string title, string text, params (string label, Action act)[] answers) => Push(new AskScene(this, title, text, answers));
 
         // ---- Persistence ------------------------------------------------------------------------
 
@@ -149,7 +155,7 @@ namespace TheTrail.Core
         {
             try
             {
-                if (Game == null || Game.Phase == Phase.Won || Game.Phase == Phase.Lost) P.Save(SaveKey, "");
+                if (Game == null || Game.Phase == Phase.Done || Game.Phase == Phase.Lost) P.Save(SaveKey, "");
                 else P.Save(SaveKey, P.ToJson(Game));
             }
             catch { }
@@ -162,15 +168,25 @@ namespace TheTrail.Core
                 var s = P.Load(SaveKey);
                 if (string.IsNullOrEmpty(s)) return null;
                 var g = P.FromJson<GameState>(s);
-                if (g == null || g.party == null || g.party.Count == 0 || g.visited == null || g.rng == null) return null;
-                if (!Trail.All.ContainsKey(g.next ?? "") || !Trail.All.ContainsKey(g.Here)) return null;
+                if (g == null || g.version != 2 || g.company == null || g.company.Count == 0 || g.visited == null || g.rng == null) return null;
+                if (g.flags == null) g.flags = new List<string>();
+                if (g.journal == null) g.journal = new List<string>();
+                if (g.offers == null) g.offers = new List<float>();
+                if (!Route.Exists(g.Here)) return null;
+                if (g.next != null && !Route.Exists(g.next)) return null;
+                if (g.Phase == Phase.Done || g.Phase == Phase.Lost || g.Count == 0) return null;
                 return g;
             }
             catch { return null; }
         }
 
         public void ClearSave() { try { P.Save(SaveKey, ""); } catch { } }
-        public void SaveRecords() { try { P.Save(RecordsKey, P.ToJson(Records)); } catch { } }
-        public void SaveSettings() { try { P.Save(SettingsKey, P.ToJson(Settings)); } catch { } Synth.Muted = !Settings.sound; }
+        public void SaveLedger() { try { P.Save(LedgerKey, P.ToJson(Ledger)); } catch { } }
+        public void SaveSettings()
+        {
+            try { P.Save(SettingsKey, P.ToJson(Settings)); } catch { }
+            Synth.Muted = !Settings.sound;
+            Synth.MusicOn = Settings.music;
+        }
     }
 }

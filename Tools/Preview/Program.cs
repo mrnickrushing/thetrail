@@ -15,7 +15,7 @@ sealed class FakePlatform : IPlatform
     public bool Touch => true;
 }
 
-// Plays through the game by pressing keys and tapping, saving a screenshot of each screen.
+// Renders every screen of the game to PNG without Unity: dotnet run -- <folder> [only-prefix]
 static class Program
 {
     static App app; static string dir; static int n;
@@ -28,16 +28,25 @@ static class Program
         Console.WriteLine($"{n - 1:00} {name}: {app.Top?.GetType().Name}");
     }
     static void K(char k) { app.Key(k); Run(0.05f); }
-    static void Dismiss() { for (int i = 0; i < 20 && app.Top is MessageScene; i++) K(' '); }
-    /// <summary>Activates the current screen's menu item whose label starts with the given text.</summary>
-    static void Choose(string label)
+
+    static GameState Ready(uint seed)
     {
-        Dismiss();
-        var f = app.Top.GetType().GetField("menu", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var menu = (Menu)f.GetValue(app.Top);
-        int i = menu.Items.FindIndex(it => it.Label.StartsWith(label));
-        if (i < 0) throw new Exception("no menu item " + label + " on " + app.Top.GetType().Name);
-        menu.Activate(i); Run(0.05f);
+        var g = Sim.NewGame("Josiah Hale", 121, seed);
+        g.company.AddRange(Content.Board(new Rng(g.seed ^ 0xB0A2Du), "Josiah Hale").GetRange(0, 4));
+        Sim.BeginOutfit(g, TeamKind.Oxen);
+        g.animals = 6; g.food = 1200; g.kegs = 3; g.powder = 60; g.kits = 2; g.medicine = 6; g.pans = 2; g.picks = 2;
+        g.cents = 18000;
+        return g;
+    }
+
+    static void At(GameState g, string id, Phase phase, string next = null)
+    {
+        g.visited.Add(id);
+        g.Phase = phase;
+        var s = Route.Get(id);
+        if (next != null) foreach (var l in s.Next) if (l.To == next) Sim.SetLeg(g, l);
+        if (next == null && s.Next.Length > 0) Sim.SetLeg(g, s.Next[0]);
+        app.Game = g;
     }
 
     static void Main(string[] args)
@@ -47,100 +56,79 @@ static class Program
         foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
         app = new App(new FakePlatform());
         Shot("title", 2);
-        K('4'); Shot("options"); K((char)27);
-        K('2'); Shot("learn"); app.Tap(10, 10); Run(0.3f); Shot("learn2"); K((char)27);
-        K('1'); Shot("job");
-        K('4'); Shot("job_info"); K(' ');
-        K('3'); Shot("names");
-        K('1'); Shot("keyboard"); foreach (var ch in "ezekiel") K(ch); Shot("keyboard_typed"); K('\n');
-        K('6'); Shot("month");
-        K('2'); Shot("store_greeting"); K(' '); K(' '); K(' ');
+        app.Push(new HelpScene()); Shot("help"); for (int hp = 2; hp <= 8; hp++) { K(Keys.Right); Shot("help" + hp); } app.Go(new TitleScene());
+        app.Push(new SettingsScene()); Shot("settings"); app.Go(new TitleScene());
+        app.Push(new CreditsScene()); Shot("credits"); app.Go(new TitleScene());
+        app.Push(new LedgerScene(-1)); Shot("ledger"); app.Go(new TitleScene());
+        app.Go(new IntroScene()); Shot("intro"); K(' '); Shot("intro2"); K(' '); K(' '); Shot("name");
+        foreach (var ch in "josiah hale") K(ch); K(Keys.Enter); Shot("departure");
+        K(Keys.Down); K(Keys.Enter); Run(0.2f);
+        Shot("hire");
+        app.Tap(30, 40); app.Tap(150, 40); app.Tap(270, 150); Run(0.1f); Shot("hire_chosen");
+        K(Keys.Enter); Shot("team_ask"); K('1'); Run(0.1f);
         Shot("store");
-        K('1'); Shot("numpad"); K('3'); K('\n');
-        K('2'); foreach (var ch in "600") K(ch); K('\n');
-        K('3'); K('1'); K('0'); K('\n');
-        K('4'); K('5'); K('\n');
-        K('5'); K('1'); K('\n'); K('6'); K('1'); K('\n'); K('7'); K('1'); K('\n');
-        K('5'); K('5'); K('2'); K('5'); Shot("numpad_too_many", 0.1f); K('\n');
+        for (int i = 0; i < 6; i++) app.Key(Keys.Right);
+        app.Key(Keys.Down); for (int i = 0; i < 20; i++) app.Key(Keys.Right);
+        app.Key(Keys.Down); for (int i = 0; i < 3; i++) app.Key(Keys.Right);
         Shot("store_filled");
-        K('8'); Shot("independence", 1);
-        K(' '); Shot("travel_day0", 0.2f);
-        Run(3); Shot("travel");
-        var g = app.Game;
-        g.rng = new Rng(7);
-        Dismiss(); app.Tap(100, 100); Run(0.1f); Shot("trail_menu");
-        Choose("Check"); Shot("supplies"); K(' ');
-        Choose("Look"); Shot("map"); K(' ');
-        Choose("Change pace"); Shot("pace"); K('1');
-        Choose("Change food"); Shot("rations"); K('1');
-        // Jump to the Kansas River.
-        g.legDone = g.legMiles - 1; g.miles = 101;
-        Choose("Continue"); Run(2); Dismiss();
-        Shot("arrive_kansas", 0.5f);
-        K(' '); Shot("river");
-        Choose("Get more"); Shot("river_info"); Dismiss();
-        Choose("Caulk"); Shot("crossing", 1.6f); Run(2.2f); Shot("crossing_result");
-        Dismiss();
-        Shot("travel_after_river", 0.5f);
+
+        var g = Ready(3);
+        app.Game = g; Sim.Depart(g); app.Go(new RoadScene()); Shot("road", 0.6f);
+        app.Push(new CampMenuAtStop()); Shot("camp");
+        app.Go(new OrdersScene()); Shot("orders");
+        app.Go(new StatusScene(0)); Shot("company");
+        app.Go(new StatusScene(1)); Shot("supplies");
+        g.visited.AddRange(new[] { "bigblue", "kearny", "ashhollow", "courthouse", "laramie" });
+        app.Go(new MapScene()); Shot("map");
+        for (int i = 0; i < 12; i++) Sim.Log(g, "Something happened on day " + i + ".");
+        app.Go(new JournalScene()); Shot("journal");
+
+        // An event card.
+        var e = Events.Get("buffalo");
+        app.Go(new RoadScene()); Flow.Decide(app, e, () => { }); Shot("event");
+
+        // Every stop.
+        foreach (var id in Route.Order)
+        {
+            var gg = Ready(5);
+            var s = Route.Get(id);
+            At(gg, id, s.Kind == StopKind.River ? Phase.Crossing : s.Haul > 0 ? Phase.Haul : s.End ? Phase.Diggings : Phase.Stop);
+            if (s.End) continue;
+            if (s.Next.Length > 1) gg.next = null;
+            app.Go(new StopScene(true)); Shot("stop_" + id, 0.4f);
+        }
+        // Road views by ground.
+        foreach (var (id, nx) in new[] { ("courthouse", "laramie"), ("devilsgate", "southpass"), ("hall", "cityrocks"), ("humboldtwells", "gravellyford"), ("sink", "ragtown"), ("ragtown", "summit"), ("blackrock", "highrock") })
+        {
+            var gg = Ready(6); At(gg, id, Phase.Road, nx); gg.legDone = gg.legMiles / 2;
+            app.Go(new RoadScene()); Shot("road_" + id, 0.5f);
+        }
+
+        // River crossing and the ford.
+        var gr = Ready(7); At(gr, "platteferry", Phase.Crossing); Sim.ReadRiver(gr);
+        app.Go(new CrossingScene()); Shot("crossing");
+        app.Go(new FordScene(Sim.Fords(gr)[1])); Shot("ford", 2.5f); app.HeldSpace = true; Run(1.5f); app.HeldSpace = false; Shot("ford2", 1.5f);
+
         // Hunting.
-        Dismiss(); if (app.Top is TravelScene) app.Tap(100, 100); Run(0.1f);
-        Choose("Hunt"); Shot("hunt_ask"); K('1');
-        Run(4); app.Tap(200, 100); Run(0.02f); Shot("hunt");
-        var hunt = (HuntScene)app.Top;
-        for (int i = 0; i < 40 && hunt.Animals.Count == 0; i++) Run(0.5f);
-        foreach (var a in hunt.Animals) { app.Tap((int)(a.X + a.W / 2 + a.Vx * 0.05f), (int)(a.Y - a.H / 2)); break; }
-        Run(0.4f); Shot("hunt_hit");
-        app.Tap(260, 7); Run(0.1f); Shot("hunt_result"); Dismiss();
-        Shot("menu_after_hunt");
-        // A fort: talk and store.
-        g.next = "kearny"; g.visited.Add("bigblue"); g.legMiles = 119; g.legDone = 118; g.miles = 303; g.Phase = Phase.Traveling;
-        app.Go(new TravelScene(false)); Run(1); Dismiss();
-        Shot("fort", 0.5f); K(' ');
-        Shot("fort_menu");
-        Choose("Talk"); Shot("talk"); K(' ');
-        Choose("Buy"); Shot("fort_store"); K((char)27);
-        // Trade.
-        Choose("Attempt"); Run(0.2f); Dismiss(); Shot("trade");
-        while (app.Top is MessageScene || app.Top is AskScene) K('2');
-        // Landmarks.
-        foreach (var id in new[] { "ashhollow", "chimney", "scotts", "laramie", "indrock", "southpass", "soda", "bluemts", "dalles", "barlow" })
-        {
-            var l = Trail.Get(id);
-            app.Go(new LandmarkScene(l, () => { }));
-            Shot("lm_" + id, 0.4f);
-        }
-        // Travel in each terrain.
-        foreach (var (id, nx) in new[] { ("laramie", "indrock"), ("southpass", "bridger"), ("hall", "snake"), ("bluemts", "dalles") })
-        {
-            g.visited.Add(id); g.next = nx; g.legMiles = 100; g.legDone = 60;
-            g.sky = id == "southpass" ? Sky.Snow : id == "laramie" ? Sky.Rain : Sky.Clear;
-            app.Go(new TravelScene(false)); Shot("travel_" + id, 0.25f);
-        }
-        g.sky = Sky.Clear;
-        // Branch, raft.
-        g.visited.Add("dalles"); g.Phase = Phase.Branch; app.Go(new BranchScene()); Shot("branch");
-        Choose("Float"); Shot("raft_intro"); K(' '); K(' ');
-        Run(6); app.PointerDown = true; app.PointerX = 120; Run(1); Shot("raft"); app.PointerDown = false;
-        // Grave from a past journey, game over, win.
-        app.Records.tombs.Add(new Tomb { miles = 400, name = "Old Pete", epitaph = "He never found the shortcut", date = "June 2, 1848" });
-        app.Go(new TombScene(app.Records.tombs[0], null)); Shot("tomb");
-        app.Go(new GameOverScene()); Shot("gameover");
-        K(' '); foreach (var ch in "gone west") K(ch); Shot("epitaph");
-        g.visited.Add("oregoncity"); g.Phase = Phase.Won;
-        app.Go(new WinScene()); Shot("win", 0.5f); K(' '); Shot("score"); K(' '); Shot("topten");
-        // Every hunt animal in four steps of its gait, plus a few lying where they fell.
-        var c = app.C; c.NoClip(); c.Clear();
-        c.Gradient(0, 0, Canvas.W, Canvas.H, 0.55f, 1.25f);
-        int y = 4;
-        foreach (var kind in Animals.Kinds)
-        {
-            var (w, h) = Animals.Size(kind);
-            if (y + h > Canvas.H) break;
-            for (int f = 0; f < 4; f++) Animals.Draw(kind, f * 1.57f, f == 3).Blit(c, 4 + f * (w + 6), y, f % 2 == 1, false);
-            y += h + 3;
-        }
-        Animals.Draw("buffalo", 0.6f, false).Blit(c, 250, 4, false, true, -0.9f);
-        Animals.Draw("deer", 0.6f, false).Blit(c, 250, 40, true, true, -0.9f);
-        Png.Save(c, Path.Combine(dir, $"{n++:00}_animals.png"), 3);
+        var gh = Ready(8); At(gh, "kearny", Phase.Road); app.Game = gh;
+        app.Go(new RoadScene()); app.Push(new StalkScene("buffalo", null)); Shot("stalk", 1);
+        app.HeldSpace = true; Run(2); app.HeldSpace = false; Shot("stalk_near", 0.1f);
+        var gd = Ready(9); At(gd, "ragtown", Phase.Road, "summit"); app.Go(new RoadScene()); app.Push(new StalkScene("deer", null)); Shot("stalk_deer", 1);
+
+        // Ropes.
+        var ga = Ready(10); At(ga, "ashhollow", Phase.Haul); app.Go(new HaulScene()); Shot("haul_down", 3);
+        var gs = Ready(11); At(gs, "summit", Phase.Haul); app.Go(new HaulScene()); app.HeldSpace = true; Shot("haul_up", 3); app.HeldSpace = false;
+
+        // The diggings.
+        var gdg = Ready(12); At(gdg, "hangtown", Phase.Diggings); gdg.day = 120; gdg.miles = 2050;
+        app.Go(new DiggingsScene(true)); Shot("diggings_arrive", 0.5f); K(' '); Shot("claims");
+        K('1'); Shot("diggings");
+        app.Push(new PanScene(q => { })); Shot("pan", 1.2f); K(' '); Run(0.4f); K(' '); Shot("pan2", 0.2f);
+        gdg.gold = 42.5f; gdg.week = 9;
+        app.Go(new PayoutScene()); Shot("payout", 1.2f);
+        var gl = Ready(13); At(gl, "sink", Phase.Road); foreach (var h in gl.company) { h.alive = false; h.fate = "Died of thirst, August 20"; }
+        app.Go(new LostScene()); Shot("lost", 1.6f);
+        app.Say("The river is up and the bar is under water. No work this week.", null, Tone.Bad); Shot("message");
+        var ic = new Canvas(); ic.Clear(); Art.Icon(ic); Png.Save(ic, Path.Combine(dir, "icon_full.png"), 4);
     }
 }

@@ -3,16 +3,9 @@ using System.IO;
 using System.IO.Compression;
 using TheTrail.Core;
 
-// Writes the 384x240 palette screen as a PNG, scaled up with square pixels and faint scanlines,
-// close to what the phone shows (without the shader's glow and curvature).
+// Writes the 480x270 palette screen as a PNG, scaled up with square pixels, as the phone shows it.
 static class Png
 {
-    public static readonly byte[][] Green =
-    {
-        new byte[] { 5, 12, 7 }, new byte[] { 14, 54, 26 }, new byte[] { 26, 104, 46 },
-        new byte[] { 46, 168, 74 }, new byte[] { 84, 238, 114 }, new byte[] { 206, 255, 210 },
-    };
-
     public static void Save(Canvas c, string path, int scale = 3)
     {
         int w = Canvas.W * scale, h = Canvas.H * scale;
@@ -21,11 +14,10 @@ static class Png
         {
             int row = y * (w * 3 + 1);
             raw[row] = 0;
-            bool scan = scale >= 3 && y % scale == scale - 1;
-            for (int x = 0; x < w; x++)
+                        for (int x = 0; x < w; x++)
             {
-                var col = Green[c.Px[(y / scale) * Canvas.W + x / scale]];
-                for (int k = 0; k < 3; k++) raw[row + 1 + x * 3 + k] = (byte)(scan ? col[k] * 3 / 4 : col[k]);
+                int p = c.Px[(y / scale) * Canvas.W + x / scale] * 3;
+                for (int k = 0; k < 3; k++) raw[row + 1 + x * 3 + k] = Pal.Rgb[p + k];
             }
         }
         using var fs = File.Create(path);

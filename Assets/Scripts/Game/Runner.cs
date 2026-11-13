@@ -5,9 +5,9 @@ using Canvas = TheTrail.Core.Canvas;
 namespace TheTrail.Game
 {
     /// <summary>
-    /// The whole Unity side of the game: owns the App, copies its 384x240 picture into a texture shown
-    /// through the CRT shader, turns touches, mouse and keys into App input, and feeds the beeper to
-    /// the audio output. The scene is empty; Boot creates this at startup.
+    /// The whole Unity side of the game: owns the App, copies its 480x270 palette picture into a texture
+    /// shown through the sharp-pixel shader, turns touches, mouse and keys into App input, and feeds the
+    /// synth to the audio output. The scene is empty; Boot creates this at startup.
     /// </summary>
     public sealed class Runner : MonoBehaviour
     {
@@ -22,16 +22,20 @@ namespace TheTrail.Game
         Rect screenRect;
         int sampleRate;
         Vector2Int lastSize;
+        // The studio logo shown over the first moments after launch, then faded out.
+        Transform logo; Material logoMat; float logoT;
+        const float LogoHold = 1.4f, LogoFade = 0.5f;
 
-        // Phosphor palettes: index 0 is the glass, 5 the hottest highlight.
-        static readonly Color32[][] Palettes =
+        // The palette as Unity colours, built once from Pal.Rgb.
+        static readonly Color32[] Colours = BuildColours();
+
+        static Color32[] BuildColours()
         {
-            new[] { C(5, 12, 7), C(14, 54, 26), C(26, 104, 46), C(46, 168, 74), C(84, 238, 114), C(206, 255, 210) },     // green P1
-            new[] { C(12, 7, 2), C(60, 32, 6), C(118, 66, 10), C(188, 112, 18), C(255, 176, 36), C(255, 232, 170) },      // amber P3
-            new[] { C(8, 9, 11), C(46, 50, 56), C(96, 102, 110), C(160, 166, 174), C(222, 228, 234), C(255, 255, 255) },  // white P4
-        };
-
-        static Color32 C(byte r, byte g, byte b) => new Color32(r, g, b, 255);
+            var c = new Color32[256];
+            for (int i = 0; i < Pal.Count; i++) c[i] = new Color32(Pal.Rgb[i * 3], Pal.Rgb[i * 3 + 1], Pal.Rgb[i * 3 + 2], 255);
+            for (int i = Pal.Count; i < 256; i++) c[i] = new Color32(255, 0, 255, 255);
+            return c;
+        }
 
         sealed class UnityPlatform : IPlatform
         {
@@ -53,7 +57,7 @@ namespace TheTrail.Game
             cam = gameObject.AddComponent<Camera>();
             cam.orthographic = true;
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = Color.black;
+            cam.backgroundColor = new Color32(Pal.Rgb[0], Pal.Rgb[1], Pal.Rgb[2], 255);   // the ink, so bars beside the picture match it
             cam.nearClipPlane = 0.1f; cam.farClipPlane = 10f;
             cam.useOcclusionCulling = false;
             cam.allowHDR = false; cam.allowMSAA = false;
@@ -64,7 +68,7 @@ namespace TheTrail.Game
             {
                 filterMode = FilterMode.Bilinear,   // the shader's sharp-bilinear sampling keeps pixels crisp
                 wrapMode = TextureWrapMode.Clamp,
-                name = "TrailScreen",
+                name = "ArgonautsScreen",
             };
             pixels = new Color32[Canvas.W * Canvas.H];
 
@@ -79,16 +83,30 @@ namespace TheTrail.Game
             mesh.bounds = new Bounds(Vector3.zero, new Vector3(1, 1, 1));
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mat = new Material(Resources.Load<Shader>("Crt")) { mainTexture = tex };
+            mat = new Material(Resources.Load<Shader>("Pixels")) { mainTexture = tex };
             mr.sharedMaterial = mat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
+
+            var logoTex = Resources.Load<Texture2D>("UI/Brand/rushingtech");
+            if (logoTex != null)
+            {
+                var lg = new GameObject("Studio logo");
+                logo = lg.transform;
+                logo.SetParent(transform, false);
+                lg.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var lr = lg.AddComponent<MeshRenderer>();
+                logoMat = new Material(Resources.Load<Shader>("Logo")) { mainTexture = logoTex };
+                lr.sharedMaterial = logoMat;
+                lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                lr.receiveShadows = false;
+            }
 
             App = new App(new UnityPlatform());
             Layout();
         }
 
-        /// <summary>Fits the 8:5 screen inside the safe area, as large as possible.</summary>
+        /// <summary>Fits the 16:9 screen inside the safe area, as large as possible.</summary>
         void Layout()
         {
             // The camera's real pixel size (on a device the same as Screen; in the Editor's Game view it can differ).
@@ -108,12 +126,34 @@ namespace TheTrail.Game
             quad.localScale = new Vector3(w, h, 1);
             mat.SetVector("_Res", new Vector4(Canvas.W, Canvas.H, 0, 0));
             mat.SetVector("_Px", new Vector4(w, h, 0, 0));
+            if (logo != null)
+            {
+                var lt = logoMat.mainTexture;
+                float lh = Mathf.Min(h * 0.55f, w * 0.55f * lt.height / lt.width);
+                logo.position = new Vector3(screenRect.center.x, screenRect.center.y, -1);
+                logo.localScale = new Vector3(lh * lt.width / lt.height, lh, 1);
+            }
         }
 
         void Update()
         {
             if (cam.pixelWidth != lastSize.x || cam.pixelHeight != lastSize.y) Layout();
-            ReadInput();
+            bool splash = false;
+            if (logo != null)
+            {
+                // The splash: the logo over the ink, then it fades and the title shows from under it.
+                logoT += Time.unscaledDeltaTime;
+                float a = logoT < LogoHold ? 1f : 1f - (logoT - LogoHold) / LogoFade;
+                if (a <= 0) { Destroy(logo.gameObject); Destroy(logoMat); logo = null; quad.gameObject.SetActive(true); }
+                else
+                {
+                    splash = true;
+                    logoMat.color = new Color(1, 1, 1, Mathf.Clamp01(a * 1.5f));
+                    quad.gameObject.SetActive(logoT >= LogoHold);
+                    if (logoT < LogoHold) return;
+                }
+            }
+            if (!splash) ReadInput();
             App.Tick(Time.unscaledDeltaTime);
             App.Draw();
             Present();
@@ -160,11 +200,14 @@ namespace TheTrail.Game
             if (Input.GetKeyDown(KeyCode.RightArrow)) App.Key(Keys.Right);
             App.HeldLeft = Input.GetKey(KeyCode.LeftArrow);
             App.HeldRight = Input.GetKey(KeyCode.RightArrow);
+            App.HeldUp = Input.GetKey(KeyCode.UpArrow);
+            App.HeldDown = Input.GetKey(KeyCode.DownArrow);
+            App.HeldSpace = Input.GetKey(KeyCode.Space);
         }
 
         void Present()
         {
-            var pal = Palettes[Mathf.Clamp(App.Settings.monitor, 0, Palettes.Length - 1)];
+            var pal = Colours;
             var src = App.C.Px;
             for (int y = 0; y < Canvas.H; y++)
             {
@@ -173,7 +216,6 @@ namespace TheTrail.Game
             }
             tex.SetPixels32(pixels);
             tex.Apply(false);
-            mat.SetFloat("_Crt", App.Settings.crt ? 1f : 0f);
         }
 
         // The beeper mixes into the listener's output on the audio thread.
@@ -194,7 +236,7 @@ namespace TheTrail.Game
         static void Start()
         {
             if (Runner.Instance != null) return;
-            var go = new GameObject("The Trail");
+            var go = new GameObject("Argonauts '49");
             Object.DontDestroyOnLoad(go);
             go.AddComponent<Runner>();
         }
