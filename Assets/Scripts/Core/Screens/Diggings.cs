@@ -305,7 +305,7 @@ namespace TheTrail.Core
 
         public override void Tap(int x, int y) { if (T > 1) Next(); }
         public override void Key(char k) { if (T > 1) Next(); }
-        void Next() { S.Click(); App.Game = null; App.Go(new LedgerScene(mark)); }
+        void Next() { S.Click(); App.Game = null; App.Go(new LedgerScene(mark)); App.AskForRating(); }
     }
 
     /// <summary>The whole company is dead or gone.</summary>

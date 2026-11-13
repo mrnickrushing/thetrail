@@ -342,5 +342,24 @@ namespace TheTrail.Tests
             var end = Clone(g); end.gold = 30; app.Game = end; app.Go(new PayoutScene()); app.Draw();
             var lost = Clone(g); app.Game = lost; app.Go(new LostScene()); app.Draw();
         }
-    }
+
+        [Test]
+        public void TheRatingIsAskedForOnceAndRemembered()
+        {
+            var plat = new MemoryPlatform();
+            var app = new App(plat);
+            App.RequestReview = () => { };
+            try
+            {
+                app.Go(new LedgerScene(-1));
+                app.AskForRating();
+                Assert.IsInstanceOf<AskScene>(app.Top, "the card goes up over the ledger");
+                app.Pop();
+                app.AskForRating();
+                Assert.IsInstanceOf<LedgerScene>(app.Top, "never a second time");
+                Assert.IsTrue(new App(plat).Settings.rateAsked, "the answer outlives the app");
+            }
+            finally { App.RequestReview = null; }
+        }
+}
 }

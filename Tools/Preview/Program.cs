@@ -126,6 +126,7 @@ static class Program
         app.Push(new PanScene(q => { })); Shot("pan", 1.2f); K(' '); Run(0.4f); K(' '); Shot("pan2", 0.2f);
         gdg.gold = 42.5f; gdg.week = 9;
         app.Go(new PayoutScene()); Shot("payout", 1.2f);
+        app.Settings.rateAsked = false; app.Go(new LedgerScene(0)); app.AskForRating(); Shot("rate_ask", 0.4f); app.Settings.rateAsked = false;
         var gl = Ready(13); At(gl, "sink", Phase.Road); foreach (var h in gl.company) { h.alive = false; h.fate = "Died of thirst, August 20"; }
         app.Go(new LostScene()); Shot("lost", 1.6f);
         app.Say("The river is up and the bar is under water. No work this week.", null, Tone.Bad); Shot("message");
