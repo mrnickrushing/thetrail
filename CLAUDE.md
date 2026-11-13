@@ -21,6 +21,9 @@ and diggings game in full-colour pixel art. Read `README.md` and `docs/DESIGN.md
 - `Assets/Scripts/Game/Runner.cs` is the only Unity code at runtime: framebuffer to texture through
   `Assets/Resources/Pixels.shader`, the launch logo (`Resources/UI/Brand/rushingtech.png`,
   `Logo.shader`; every Rushing Technologies game shows it), input, audio (`OnAudioFilterRead`).
+- Rating: `App.AskForRating` asks once, after a company sells up (`PayoutScene` -> ledger): RATE IT calls
+  `App.RequestReview` (the runner wires Apple's sheet, `Device.RequestStoreReview`), either answer sets
+  `Settings.rateAsked` for good; Settings has a "Rate Argonauts '49" row (`App.OpenStoreReview`).
 - `Canvas` clashes with `UnityEngine.Canvas`: Unity-side files use `using Canvas = TheTrail.Core.Canvas;`.
 - No physics module: don't use `GameObject.CreatePrimitive`.
 

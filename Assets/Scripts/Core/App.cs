@@ -26,6 +26,7 @@ namespace TheTrail.Core
         public bool sound = true;
         public bool music = true;
         public bool fast;            // quicker travel
+        public bool rateAsked;       // asked for an App Store rating (or rated from Settings): never again
     }
 
     [Serializable] public class LedgerEntry { public string name; public int dollars; public string rank; public string note; }
@@ -148,6 +149,34 @@ namespace TheTrail.Core
         }
 
         public void Ask(string title, string text, params (string label, Action act)[] answers) => Push(new AskScene(this, title, text, answers));
+
+        // ---- Rating -----------------------------------------------------------------------------
+
+        public const string ReviewUrl = "https://apps.apple.com/app/id6830442340?action=write-review";
+        /// <summary>Set by the Unity runner: Apple's in-app rating sheet, and opening a web address.</summary>
+        public static Action RequestReview;
+        public static Action<string> OpenUrl;
+
+        /// <summary>
+        /// Once, after a company sells up in California: "Enjoying Argonauts '49?" RATE IT brings up Apple's rating
+        /// sheet; either answer means it never asks again.
+        /// </summary>
+        public void AskForRating()
+        {
+            if (Settings.rateAsked) return;
+            Settings.rateAsked = true;
+            SaveSettings();
+            Ask("ENJOYING ARGONAUTS '49?", "If the road to California was worth the trip, a quick rating on the App Store helps other travellers find the game.",
+                ("Rate it", () => { if (RequestReview != null) RequestReview(); else OpenUrl?.Invoke(ReviewUrl); }), ("No thanks", null));
+        }
+
+        /// <summary>The Settings row: straight to the App Store's review page.</summary>
+        public void OpenStoreReview()
+        {
+            Settings.rateAsked = true;
+            SaveSettings();
+            OpenUrl?.Invoke(ReviewUrl);
+        }
 
         // ---- Persistence ------------------------------------------------------------------------
 

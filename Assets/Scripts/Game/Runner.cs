@@ -49,6 +49,14 @@ namespace TheTrail.Game
         void Awake()
         {
             Instance = this;
+            App.OpenUrl = Application.OpenURL;
+            App.RequestReview = () =>
+            {
+#if UNITY_IOS && !UNITY_EDITOR
+                if (UnityEngine.iOS.Device.RequestStoreReview()) return;
+#endif
+                Application.OpenURL(App.ReviewUrl);
+            };
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
             Screen.sleepTimeout = SleepTimeout.NeverSleep;

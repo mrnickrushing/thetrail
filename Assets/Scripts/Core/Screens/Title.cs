@@ -206,6 +206,7 @@ namespace TheTrail.Core
             menu.Add("Sound", () => { App.Settings.sound = !App.Settings.sound; App.SaveSettings(); Build(); }, true, App.Settings.sound ? "ON" : "OFF");
             menu.Add("Music", () => { App.Settings.music = !App.Settings.music; App.SaveSettings(); if (App.Settings.music) App.Synth.Music(Synth.Susanna, 0.15f, true); else App.Synth.StopMusic(); Build(); }, true, App.Settings.music ? "ON" : "OFF");
             menu.Add("Travel speed", () => { App.Settings.fast = !App.Settings.fast; App.SaveSettings(); Build(); }, true, App.Settings.fast ? "FAST" : "NORMAL");
+            menu.Add("Rate Argonauts '49", () => App.OpenStoreReview());
             menu.Add("Clear the Assay Ledger", () => App.Ask("CLEAR THE LEDGER?", "Your companies will be removed from the ledger.", ("Clear it", () => { App.Ledger = Ledger.Default(); App.SaveLedger(); }), ("Keep it", null)));
             menu.Add("Back", () => App.Pop());
         }
