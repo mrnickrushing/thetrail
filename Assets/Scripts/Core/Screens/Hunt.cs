@@ -3,267 +3,185 @@ using System.Collections.Generic;
 
 namespace TheTrail.Core
 {
-    /// <summary>The hunt: game crosses the field, you tap to shoot. You can only carry so much back.</summary>
-    public sealed class HuntScene : Scene
+    /// <summary>
+    /// Stalking game. One animal grazes in the distance; creep toward it while its head is down and
+    /// freeze when it looks up. Fire when close enough: the nearer, the surer the shot. Moving while
+    /// it watches makes it uneasy, and an uneasy animal bolts.
+    /// </summary>
+    public sealed class StalkScene : Scene
     {
-        public const float Length = 30f;
-        /// <summary>Most meat you can haul back to the wagon from one hunt.</summary>
-        public const int CarryLimit = 400;
-        const int HunterX = 192, HunterY = 226, Top = 16;
-
-        public sealed class Animal
-        {
-            public string Kind; public float X, Y, Vx, Vy; public bool Dead, Fleeing; public int Lbs; public float Age;
-            public int W => Core.Animals.Size(Kind).w;
-            public int H => Core.Animals.Size(Kind).h;
-            public bool Contains(float px, float py) => px >= X && px < X + W && py >= Y - H && py < Y;
-        }
-
-        sealed class Shot { public float X, Y, Tx, Ty; public bool Done; public float Puff = -1; }
-        sealed class Cover { public int X, Y, Kind, Size; public int W => Kind == 2 ? Size * 2 + 2 : Size * 2 + 2; }
-
-        readonly List<Animal> animals = new List<Animal>();
-        readonly List<Shot> shots = new List<Shot>();
-        readonly List<Cover> cover = new List<Cover>();
+        readonly string animal;
+        readonly Action then;
+        readonly bool fromCamp;
+        float yards, uneasy, cycle, nextLook, lookFor, flee, endT = -1, muzzle;
+        bool headUp, fled, killed;
+        int shots, pounds;
+        string msg = "";
         Rng r;
-        float time, spawn = 0.6f, aimX = HunterX, aimY = 100;
-        int meat, fired;
-        bool over;
-        /// <summary>Ends the hunt early with whatever you've shot.</summary>
-        static readonly Btn Leave = new Btn(234, 1, 60, 13, "LEAVE");
+        Btn creep, fire, quit;
+        const int ViewH = 200, Horizon = 112;
 
-        public int Meat => meat;
-        public bool Over => over;
-        /// <summary>For tests: as if this much had been shot.</summary>
-        public void AddMeat(int lbs) => meat += lbs;
-        public IReadOnlyList<Animal> Animals => animals;
-
-        static int Lbs(string k) => k == "buffalo" ? 350 : k == "elk" ? 220 : k == "bear" ? 160 : k == "deer" ? 90 : k == "antelope" ? 50 : k == "rabbit" ? 3 : 1;
-        static float Speed(string k) => k == "buffalo" ? 26 : k == "elk" ? 40 : k == "bear" ? 30 : k == "deer" ? 48 : k == "antelope" ? 78 : k == "rabbit" ? 60 : 44;
-
-        string[] Kinds()
+        public StalkScene(string animal, Action then)
         {
-            switch (Sim.TerrainNow(G))
-            {
-                case Terrain.Plains: return new[] { "buffalo", "buffalo", "buffalo", "antelope", "antelope", "rabbit", "rabbit", "rabbit", "deer" };
-                case Terrain.Hills: return new[] { "deer", "deer", "deer", "antelope", "antelope", "rabbit", "rabbit", "buffalo" };
-                case Terrain.Mountains: return new[] { "elk", "elk", "deer", "deer", "deer", "bear", "squirrel", "squirrel", "rabbit" };
-                case Terrain.Desert: return new[] { "rabbit", "rabbit", "rabbit", "rabbit", "antelope", "antelope", "antelope" };
-                default: return new[] { "deer", "deer", "deer", "elk", "elk", "bear", "squirrel", "squirrel", "squirrel" };
-            }
+            fromCamp = animal == null;
+            this.animal = animal;
+            this.then = then;
         }
+
+        string Kind { get; set; }
 
         public override void Enter()
         {
-            r = new Rng(G.rng.Next());
-            int n = r.Range(6, 10);
-            for (int i = 0; i < n; i++)
-            {
-                int x, y;
-                do { x = r.Range(10, Canvas.W - 30); y = r.Range(60, 200); } while (Math.Abs(x - HunterX) < 50 && y > 170);
-                cover.Add(new Cover { X = x, Y = y, Kind = r.Range(0, 3), Size = r.Range(5, 10) });
-            }
-            cover.Sort((a, b) => a.Y.CompareTo(b.Y));
+            r = new Rng(G.seed ^ (uint)G.day * 977u ^ 0x5EEDu);
+            var ground = Sim.GroundNow(G);
+            Kind = animal ?? (ground == Ground.Mountains || ground == Ground.Forest || ground == Ground.Hills ? (r.Chance(0.7f) ? "deer" : "antelope")
+                : ground == Ground.Prairie || ground == Ground.Plains ? (r.Chance(0.45f) ? "buffalo" : "antelope")
+                : r.Chance(0.6f) ? "antelope" : "deer");
+            yards = r.Range(230f, 290f);
+            nextLook = r.Range(1.8f, 3.2f);
+            creep = new Btn(10, Canvas.H - 30, 150, 24, App.Touch ? "HOLD TO CREEP" : "HOLD SPACE: CREEP");
+            fire = new Btn(Canvas.W - 130, Canvas.H - 30, 120, 24, "FIRE");
+            quit = new Btn(Canvas.W / 2 - 50, Canvas.H - 30, 100, 24, "GIVE UP");
+            S.StopMusic();
         }
 
-        void Spawn()
-        {
-            var kinds = Kinds();
-            string k = kinds[r.Range(0, kinds.Length)];
-            bool left = r.Chance(0.5f);
-            var a = new Animal { Kind = k, Lbs = Lbs(k) };
-            a.Y = r.Range(54, 200);
-            a.X = left ? -a.W : Canvas.W;
-            a.Vx = (left ? 1 : -1) * Speed(k) * r.Range(0.8f, 1.2f);
-            a.Vy = r.Range(-6f, 6f);
-            animals.Add(a);
-        }
+        int Meat => Kind == "buffalo" ? 420 : Kind == "deer" ? 110 : 60;
+        bool Hunter => G.Has(Trade.Hunter);
+        bool Over => endT >= 0;
+        bool Creeping => !Over && (App.HeldSpace || App.HeldUp || (App.PointerDown && creep.Hit(App.PointerX, App.PointerY)));
 
         public override void Tick(float dt)
         {
             base.Tick(dt);
-            if (over) return;
-            time += dt;
-
-            spawn -= dt;
-            int alive = 0; foreach (var a in animals) if (!a.Dead && a.X > -80 && a.X < Canvas.W + 80) alive++;
-            if (spawn <= 0 && alive < 4)
+            muzzle = Math.Max(0, muzzle - dt);
+            if (Over) { if (T - endT > 1.6f) Finish(); return; }
+            // The animal grazes, then lifts its head to look about.
+            cycle += dt;
+            if (!headUp && cycle > nextLook) { headUp = true; cycle = 0; lookFor = r.Range(0.9f, 1.6f) + uneasy; }
+            else if (headUp && cycle > lookFor) { headUp = false; cycle = 0; nextLook = r.Range(1.4f, 3.4f) * (1f - uneasy * 0.4f); }
+            if (Creeping)
             {
-                Spawn();
-                spawn = r.Range(1.0f, 2.4f) * (1 + Math.Min(3f, G.huntPressure) * 0.5f);
+                yards = Math.Max(25, yards - dt * 34);
+                if (headUp) uneasy += dt * (Hunter ? 0.55f : 0.9f) * (1.4f - yards / 300f);
+                if ((int)(T * 4) % 2 == 0 && T % 0.25f < dt) S.Click();
             }
-
-            foreach (var a in animals)
-            {
-                if (a.Dead) continue;
-                a.Age += dt;
-                a.X += a.Vx * dt * (a.Fleeing ? 2.2f : 1f);
-                a.Y += a.Vy * dt;
-                if (a.Y < 54 || a.Y > 204) a.Vy = -a.Vy;
-            }
-            animals.RemoveAll(a => !a.Dead && (a.X < -120 || a.X > Canvas.W + 120));
-
-            foreach (var s in shots)
-            {
-                if (s.Done) { s.Puff += dt; continue; }
-                float dx = s.Tx - s.X, dy = s.Ty - s.Y, d = (float)Math.Sqrt(dx * dx + dy * dy);
-                float step = 700 * dt;
-                int sub = Math.Max(1, (int)(Math.Min(step, d) / 3));
-                for (int i = 0; i < sub && !s.Done; i++)
-                {
-                    float m = Math.Min(step, d) / sub;
-                    if (d < 0.5f) { s.Done = true; s.Puff = 0; break; }
-                    s.X += dx / d * m; s.Y += dy / d * m;
-                    if (Hit(s)) break;
-                    if (Math.Abs(s.X - s.Tx) < 1.5f && Math.Abs(s.Y - s.Ty) < 1.5f) { s.Done = true; s.Puff = 0; }
-                }
-            }
-            shots.RemoveAll(s => s.Done && s.Puff > 0.25f);
-
-            if (time >= Length || (G.bullets <= 0 && shots.TrueForAll(s => s.Done))) Finish();
+            else uneasy = Math.Max(0, uneasy - dt * 0.08f);
+            if (yards < 45) uneasy += dt * 0.25f;   // too close to stay hidden for long
+            if (uneasy >= 1) Bolt("The " + Kind + " caught sight of you and ran.");
         }
 
-        bool Hit(Shot s)
-        {
-            // Trees and rocks nearer than the target stop the bullet.
-            foreach (var cv in cover)
-                if (cv.Y > s.Ty && s.X >= cv.X - cv.W / 2 && s.X <= cv.X + cv.W / 2 && s.Y <= cv.Y && s.Y >= cv.Y - CoverHeight(cv))
-                { s.Done = true; s.Puff = 0; return true; }
-            foreach (var a in animals)
-                if (!a.Dead && a.Contains(s.X, s.Y))
-                {
-                    a.Dead = true; meat += a.Lbs; s.Done = true; s.Puff = 0;
-                    S.Good();
-                    foreach (var b in animals) if (!b.Dead && Math.Abs(b.X - a.X) < 120) { b.Fleeing = true; b.Vx = Math.Sign(b.X - a.X + 0.01f) * Math.Abs(b.Vx); }
-                    return true;
-                }
-            return false;
-        }
+        void Bolt(string why) { fled = true; msg = why; endT = T; S.Bad(); }
 
-        static int CoverHeight(Cover cv) => cv.Kind == 0 ? cv.Size * 4 : cv.Kind == 1 ? cv.Size * 3 : cv.Size;
+        float HitChance => Sim.Clamp(1.1f - yards / 190f + (Hunter ? 0.15f : 0) - (headUp ? 0 : 0.05f), 0.04f, 0.95f);
 
-        public void Fire(int tx, int ty)
+        void Fire()
         {
-            if (over) return;
-            if (G.bullets <= 0) { S.Beep(150, 0.08f); return; }
-            if (ty < Top + 2) return;
-            G.bullets--; fired++;
-            aimX = tx; aimY = ty;
-            var (mx, my) = Muzzle();
-            shots.Add(new Shot { X = mx, Y = my, Tx = tx, Ty = ty });
+            if (Over) return;
+            if (G.powder - shots <= 0) { msg = "Out of powder and shot."; S.Bad(); return; }
+            shots++; muzzle = 0.15f;
             S.Shot();
-        }
-
-        (float, float) Muzzle()
-        {
-            float dx = aimX - HunterX, dy = aimY - (HunterY - 22), d = (float)Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
-            return (HunterX + dx / d * 16, HunterY - 22 + dy / d * 16);
+            if (r.Chance(HitChance))
+            {
+                killed = true; pounds = Meat; endT = T;
+                msg = "A clean shot at " + (int)yards + " yards. You'll need the whole company to carry the meat.";
+                if (Kind != "buffalo") msg = "A clean shot at " + (int)yards + " yards.";
+                return;
+            }
+            // A buffalo herd may only shift; lighter animals are gone at the first shot.
+            if (Kind == "buffalo" && r.Chance(0.5f)) { msg = "Missed. The herd shifts and keeps grazing, uneasy."; uneasy = Math.Min(0.95f, uneasy + 0.4f); headUp = true; cycle = 0; lookFor = 1.6f; }
+            else Bolt("Missed at " + (int)yards + " yards. The " + Kind + " is gone.");
         }
 
         void Finish()
         {
-            if (over) return;
-            over = true;
-            int got = Math.Min(meat, CarryLimit);
-            got = Math.Min(got, Math.Max(0, 2000 - G.food));
-            G.food += got;
-            G.huntPressure += 1f;
-            var texts = new List<string>();
-            if (meat == 0) texts.Add(fired == 0 ? "You didn't fire a shot. You return to the wagon empty-handed." : "You used " + fired + " bullets and didn't bring anything down.");
-            else
+            if (endT < -0.5f) return;
+            endT = -2;
+            string outcome = Sim.HuntResult(G, Kind, pounds, shots);
+            var log = new List<Notice> { new Notice(outcome, pounds > 0 ? Tone.Good : Tone.Info) };
+            if (fromCamp)
             {
-                string t = "You shot " + meat + " pounds of meat.";
-                if (meat > got) t += " You could only carry " + got + " pounds back to the wagon.";
-                else t += " You carry it all back to the wagon.";
-                texts.Add(t);
+                var day = Sim.Rest(G);
+                log[0] = new Notice("A day spent hunting. " + outcome, log[0].Tone);
+                log.AddRange(day.Notices);
             }
-            var log = Sim.Day(G, false);
             App.SaveGame();
-            App.SayAll(texts, () => Flow.Report(App, log, () => App.Go(new TrailMenuScene())));
+            App.Pop();
+            Flow.Report(App, log, then);
         }
 
         public override void Draw(Canvas c)
         {
-            // Field: a far tree line, grass getting brighter toward you.
-            c.Gradient(0, Top, Canvas.W, 26, 0.1f, 0.5f);
-            for (int i = 0; i < 30; i++) Art.RoundTree(c, i * 14 + (i * 7) % 9, Top + 30, 4 + i % 3, 1.2f);
-            c.Gradient(0, Top + 30, Canvas.W, Canvas.H - Top - 30, 0.55f, 1.25f);
-            for (int i = 0; i < 70; i++)
+            var ground = Sim.GroundNow(G);
+            Art.Sky(c, 0, 0, Canvas.W, Horizon, 0, App.Time, 7, G.Sky);
+            var ramp = Art.GroundRamp(ground);
+            Art.Hills(c, 0, Canvas.W, Horizon, 18, 0.012f, 4, Pal.FarRamp, 0.2f, 0.7f);
+            c.Gradient(0, Horizon, Canvas.W, ViewH - Horizon, ramp, 0.75f, 0.35f);
+            // Tufts get bigger toward the viewer.
+            for (int i = 0; i < 90; i++)
             {
-                int gx = (i * 71) % Canvas.W, gy = Top + 36 + (i * 37) % (Canvas.H - Top - 40);
-                c.Set(gx, gy, Canvas.Mid); c.Set(gx - 1, gy + 1, Canvas.Dark); c.Set(gx + 1, gy + 1, Canvas.Dark);
+                uint hsh = Sim.Hash("tuft" + i);
+                float d = (hsh & 0xFFFF) / 65535f;
+                int y = Horizon + 2 + (int)(d * d * (ViewH - Horizon - 4));
+                int x = (int)((hsh >> 16) % Canvas.W);
+                int h = 1 + (int)(d * 6);
+                c.VLine(x, y - h, y, ramp[0]); c.VLine(x + 2, y - h + 1, y, ramp[0]);
             }
-
-            // Painter's order: things farther up the screen first.
-            var items = new List<(float y, Action draw)>();
-            foreach (var cv in cover) { var v = cv; items.Add((v.Y, () => DrawCover(c, v))); }
-            foreach (var a in animals) { var v = a; items.Add((v.Y, () => DrawAnimal(c, v))); }
-            items.Sort((a, b) => a.y.CompareTo(b.y));
-            foreach (var it in items) it.draw();
-
-            foreach (var s in shots)
+            // The animal, nearer = larger and lower.
+            float near = 1f - (yards - 25f) / 270f;
+            int scale = near > 0.7f ? 3 : near > 0.35f ? 2 : 1;
+            int ay = Horizon + 6 + (int)(near * near * 60);
+            int ax = Canvas.W / 2 + 40 + (int)(Math.Sin(T * 0.05f) * 6);
+            if (killed) ay += 0;
+            if (fled && !killed) ax += (int)((T - endT) * 260);
+            float frame = fled && !killed ? T * 18 : (headUp ? 0 : (float)Math.Sin(T * 0.6f) * 0.3f);
+            bool up = headUp || fled;
+            if (killed) { c.Ellipse(ax, ay - 4 * scale, 9 * scale, 3 * scale, Kind == "buffalo" ? Pal.EarthDark : Pal.Earth); }
+            else if (Kind == "buffalo")
             {
-                if (!s.Done) { c.Set((int)s.X, (int)s.Y, Canvas.Hot); c.Set((int)s.X + 1, (int)s.Y, Canvas.Hot); }
-                else if (s.Puff >= 0) c.Ring((int)s.Tx, (int)s.Ty, 1 + (int)(s.Puff * 12), Canvas.Bright);
+                Art.Buffalo(c, ax - 40 * scale, ay - 2, frame + 1, false, false, scale);
+                Art.Buffalo(c, ax, ay, frame, false, up, scale);
+                Art.Buffalo(c, ax + 34 * scale, ay - 1, frame + 2, true, false, scale);
             }
-            DrawHunter(c);
-
-            // Heads-up line.
-            c.Fill(0, 0, Canvas.W, Top, Canvas.Black);
-            c.HLine(0, Canvas.W, Top - 1, Canvas.Mid);
-            c.Text(6, 4, "Bullets " + G.bullets, Canvas.Bright);
-            c.Text(130, 4, "Meat " + meat + " lb", Canvas.Hot);
-            int left = Math.Max(0, (int)Math.Ceiling(Length - time));
-            c.TextRight(Canvas.W - 6, 4, "Time 0:" + left.ToString("00"), left <= 5 && Blink ? Canvas.Hot : Canvas.Bright);
-            Leave.Draw(c, false, !over);
-            if (T < 2.5f) c.TextOutlined((Canvas.W - Canvas.TextWidth(App.Touch ? "TAP TO SHOOT" : "CLICK TO SHOOT")) / 2, 120, App.Touch ? "TAP TO SHOOT" : "CLICK TO SHOOT", Canvas.Hot);
-        }
-
-        void DrawCover(Canvas c, Cover cv)
-        {
-            if (cv.Kind == 0) Art.Pine(c, cv.X, cv.Y, cv.Size * 4, Canvas.Mid, Canvas.Dark);
-            else if (cv.Kind == 1) Art.RoundTree(c, cv.X, cv.Y, cv.Size + 2, 2.4f);
-            else
+            else if (Kind == "deer") Art.Deer(c, ax, ay, frame, false, up, scale);
+            else Art.Antelope(c, ax, ay, frame, false, up, scale);
+            if (headUp && !Over) c.TextShadow(ax - 2, ay - 22 * scale - 8, "!", uneasy > 0.6f ? Pal.RedBright : Pal.Gold, 2);
+            // The rifle barrel at the foot of the view.
+            c.Fill(0, ViewH - 10, Canvas.W, 10, ramp[0]);
+            c.Line(70, ViewH - 2, 150, ViewH - 30, Pal.Black); c.Line(71, ViewH - 2, 151, ViewH - 30, Pal.RockDark);
+            c.Fill(40, ViewH - 6, 40, 6, Pal.WoodDark);
+            if (muzzle > 0) c.Disc(152, ViewH - 31, 5, Pal.Sun);
+            // Readout.
+            c.Fill(0, ViewH, Canvas.W, Canvas.H - ViewH, Pal.Ink);
+            c.HLine(0, Canvas.W, ViewH, Pal.Tan);
+            Ui.Panel(c, 6, 4, Canvas.W - 12, 26);
+            c.Text(14, 9, "Stalking " + (Kind == "buffalo" ? "buffalo" : "a " + (Kind == "deer" ? "mule deer" : "pronghorn antelope")) + ".  " + (int)yards + " yards.  Hit chance " + (int)(HitChance * 100) + "%", Pal.Cream);
+            c.Text(14, 19, headUp ? "It's looking. Keep still!" : "Head down, grazing. Creep closer.", headUp ? Pal.Dusk : Pal.Green);
+            c.TextRight(Canvas.W - 14, 9, "Shots " + (G.powder - shots), Pal.Gold);
+            c.TextRight(326, 19, "WARY", Pal.Tan);
+            Ui.Bar(c, 330, 19, 136, 8, uneasy, uneasy > 0.6f ? Pal.RedBright : Pal.GoldMid);
+            if (msg.Length > 0) c.TextShadowCenter(ViewH + 6, msg, killed ? Pal.Green : Pal.Dusk);
+            if (!Over)
             {
-                for (int j = 0; j < cv.Size; j++)
-                    for (int i = -cv.Size; i <= cv.Size; i++)
-                        if (i * i / (float)(cv.Size * cv.Size) + j * j / (float)(cv.Size * cv.Size) <= 1)
-                            c.SetShade(cv.X + i, cv.Y - j, 2.2f + (i < 0 ? 0.8f : -0.4f) + j * 0.05f);
+                creep.Draw(c, Creeping);
+                quit.Draw(c, App.PointerDown && quit.Hit(App.PointerX, App.PointerY));
+                var f = fire; f.Enabled = G.powder - shots > 0;
+                f.Draw(c, App.PointerDown && fire.Hit(App.PointerX, App.PointerY));
             }
-        }
-
-        void DrawAnimal(Canvas c, Animal a)
-        {
-            bool right = a.Vx > 0;
-            float phase = a.Dead ? 0.6f : a.Age * (a.Fleeing ? 15f : 9f);
-            var sp = Core.Animals.Draw(a.Kind, phase, a.Fleeing && !a.Dead);
-            sp.Blit(c, (int)a.X, (int)a.Y - a.H, right, a.Dead, a.Dead ? -0.9f : 0);
-            if (a.Dead) c.TextOutlined((int)a.X + a.W / 2 - Canvas.TextWidth(a.Lbs.ToString()) / 2, (int)a.Y - a.H - 10, a.Lbs.ToString(), Canvas.Bright);
-        }
-
-        void DrawHunter(Canvas c)
-        {
-            int x = HunterX, y = HunterY;
-            // Seen from behind: hat, shoulders, coat, legs planted.
-            c.Fill(x - 6, y - 30, 12, 2, Canvas.Mid);
-            c.Fill(x - 3, y - 34, 6, 4, Canvas.Mid);
-            c.Fill(x - 3, y - 28, 6, 3, Canvas.Bright);
-            c.Fill(x - 7, y - 25, 14, 14, Canvas.Mid);
-            c.VLine(x, y - 25, y - 12, Canvas.Dark);
-            c.Fill(x - 5, y - 11, 4, 11, Canvas.Dark);
-            c.Fill(x + 1, y - 11, 4, 11, Canvas.Dark);
-            var (mx, my) = Muzzle();
-            c.Line(x + 4, y - 20, (int)mx, (int)my, Canvas.Hot);
-            c.Line(x + 5, y - 20, (int)mx + 1, (int)my, Canvas.Bright);
         }
 
         public override void Tap(int x, int y)
         {
-            // Generous target for a finger: the whole top bar around the button.
-            if (y < Top + 6 && x >= Leave.X - 12 && x < Leave.X + Leave.W + 12) { if (!over) { S.Click(); Finish(); } return; }
-            Fire(x, y);
+            if (T < 0.3f) return;
+            if (Over) { if (T - endT > 0.4f) Finish(); return; }
+            if (fire.Hit(x, y)) Fire();
+            else if (quit.Hit(x, y)) { msg = "You give up the stalk."; endT = T - 1.2f; S.Click(); }
         }
 
-        public override void Key(char k) { if (k == Keys.Escape && !over) Finish(); }
+        public override void Key(char k)
+        {
+            if (Over) { if (T - endT > 0.4f) Finish(); return; }
+            if (k == 'f' || k == Keys.Enter) Fire();
+            else if (k == Keys.Escape) { msg = "You give up the stalk."; endT = T - 1.2f; }
+        }
     }
 }

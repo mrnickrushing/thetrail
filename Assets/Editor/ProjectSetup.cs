@@ -20,10 +20,10 @@ namespace TheTrail.EditorTools
     {
         public const string ScenePath = "Assets/Scenes/Main.unity";
         public const string BundleId = "com.rushingtech.theogtrail";
-        public const string ProductName = "The OG Trail";
+        public const string ProductName = "Argonauts '49";
         /// <summary>CFBundleShortVersionString; must match the App Store Connect version.</summary>
         public const string AppVersion = "1.0";
-        const string DoneKey = "TheTrail.ProjectSetup.v1";
+        const string DoneKey = "TheTrail.ProjectSetup.v2";
 
         static ProjectSetup()
         {
@@ -93,43 +93,30 @@ namespace TheTrail.EditorTools
             PlayerSettings.iOS.SetiPhoneLaunchScreenType(iOSLaunchScreenType.Default);
             PlayerSettings.runInBackground = false;
             PlayerSettings.resizableWindow = true;
-            PlayerSettings.defaultScreenWidth = 1152;
-            PlayerSettings.defaultScreenHeight = 720;
+            PlayerSettings.defaultScreenWidth = 1440;
+            PlayerSettings.defaultScreenHeight = 810;
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         }
     }
 
-    /// <summary>Paints the app icon from the game's own pixels: the wagon on a green phosphor screen.</summary>
+    /// <summary>Paints the app icon from the game's own pixels (Art.Icon), 16x, in the game's palette.</summary>
     public static class AppIcon
     {
         public const string IconPath = "Assets/Art/AppIcon.png";
 
-        static readonly Color32[] Green =
-        {
-            new Color32(5, 12, 7, 255), new Color32(14, 54, 26, 255), new Color32(26, 104, 46, 255),
-            new Color32(46, 168, 74, 255), new Color32(84, 238, 114, 255), new Color32(206, 255, 210, 255),
-        };
-
         public static void Generate()
         {
-            // 64x64 of game pixels, scaled 16x with scanlines.
             var c = new Canvas();
             c.Clear();
-            for (int y = 40; y < 64; y++) for (int x = 0; x < 64; x++) c.SetShade(x, y, 0.9f + (y - 40) * 0.03f);
-            c.HLine(0, 63, 40, Canvas.Mid);
-            Art.Wagon(c, 12, 18, 0.4f);
-            c.Text(12, 4, "TRAIL", Canvas.Hot);
+            Art.Icon(c);
             const int n = 1024, s = 16;
             var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
             var px = new Color32[n * n];
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++)
                 {
-                    var col = Green[c.Get(x / s, 63 - y / s)];
-                    float scan = (y % s) < 3 ? 0.7f : 1f;
-                    float u = x / (float)n - 0.5f, v = y / (float)n - 0.5f;
-                    float vig = 1f - (u * u + v * v) * 0.9f;
-                    px[y * n + x] = new Color32((byte)(col.r * scan * vig), (byte)(col.g * scan * vig), (byte)(col.b * scan * vig), 255);
+                    int k = c.Get(x / s, 63 - y / s) * 3;
+                    px[y * n + x] = new Color32(Pal.Rgb[k], Pal.Rgb[k + 1], Pal.Rgb[k + 2], 255);
                 }
             tex.SetPixels32(px);
             Directory.CreateDirectory(Path.GetDirectoryName(IconPath));
